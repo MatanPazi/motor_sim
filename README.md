@@ -66,7 +66,7 @@ simulate_motor(motor, sim, app, control)
 ```
 ![WhatsApp Image 2024-10-15 at 09 22 14](https://github.com/user-attachments/assets/6ee8afdf-9efa-4d43-91bb-2e46f7fdc741)
 
-![WhatsApp Image 2024-10-15 at 09 22 14 (1)](https://github.com/user-attachments/assets/18edac79-c37f-4686-9d74-379e88be9340)
+![WhatsApp Image 2024-10-15 at 09 22 12 (1)](https://github.com/user-attachments/assets/bb94a8ae-bd7f-450d-aa14-84b87683151c)
 
 
 ## License
