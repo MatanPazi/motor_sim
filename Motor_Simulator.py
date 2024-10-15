@@ -71,7 +71,7 @@ class Motor:
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
-        self.flux_linkage = bemf_const / self.pole_pairs / 1.5
+        self.flux_linkage = bemf_const / pole_pairs / 1.5
         # Harmonics, choose preferred option (Comment out the other):
         #   None for no bemf harmonics
         #   dictionary for desired harmonics
