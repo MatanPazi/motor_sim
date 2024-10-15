@@ -64,7 +64,8 @@ simulate_motor(motor, sim, app, control)
 # Plot results
 ...
 ```
-![WhatsApp Image 2024-10-15 at 09 22 14](https://github.com/user-attachments/assets/6ee8afdf-9efa-4d43-91bb-2e46f7fdc741)
+![WhatsApp Image 2024-10-15 at 09 22 12](https://github.com/user-attachments/assets/7b036f18-9923-4fde-bd1e-d25c9c807a72)
+
 
 ![WhatsApp Image 2024-10-15 at 09 22 12 (1)](https://github.com/user-attachments/assets/bb94a8ae-bd7f-450d-aa14-84b87683151c)
 
