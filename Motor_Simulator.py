@@ -67,7 +67,7 @@ class Motor:
         self.Lab_dot = 0
         self.Lac_dot = 0
         self.Lbc_dot = 0
-        self.bemf_const = bemf_const / pole_pairs / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
+        self.bemf_const = bemf_const / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
@@ -147,7 +147,7 @@ class Motor:
         return torque
 
 class Simulation:
-    def __init__(self, time_step=100e-9, total_time=0.05):
+    def __init__(self, time_step=100e-9, total_time=0.005):
         '''
         Initializes simulation related parameters:
 
@@ -160,8 +160,8 @@ class Simulation:
         self.time_points = np.arange(0, total_time, time_step)
 
 class Application:
-    def __init__(self, speed_control=True, commanded_speed=50.0, commanded_iq=50.0, commanded_id=0.0,
-                 acceleration=10000.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = False):
+    def __init__(self, speed_control=True, commanded_speed=700.0, commanded_iq=0.0, commanded_id=0.0,
+                 acceleration=200000.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = True):
         '''
         Initializes application-related parameters:
         
@@ -519,7 +519,7 @@ def simulate_motor(motor, sim, app, control):
 
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
-        if (app.short_circuit == False) or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
+        if (app.short_circuit == False):# or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
             pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(Va, Vb, Vc, app.vBus, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
         else:
             pwm_signals_top = [0, 0, 0]
@@ -544,9 +544,9 @@ def simulate_motor(motor, sim, app, control):
         motor.inductance_abc_dot(angle_e, speed_e)
 
         # Calculate the phases bemf
-        motor.bemf_a = speed_e * motor.phase_bemf(angle_e, 0)
-        motor.bemf_b = speed_e * motor.phase_bemf(angle_e, -2 * np.pi / 3)
-        motor.bemf_c = speed_e * motor.phase_bemf(angle_e, 2 * np.pi / 3)
+        motor.bemf_a = speed_m * motor.phase_bemf(angle_e, 0)
+        motor.bemf_b = speed_m * motor.phase_bemf(angle_e, -2 * np.pi / 3)
+        motor.bemf_c = speed_m * motor.phase_bemf(angle_e, 2 * np.pi / 3)
         bemf.append([motor.bemf_a, motor.bemf_b, motor.bemf_c])
 
         # Solve the ODE for phase currents over one time step
@@ -595,33 +595,37 @@ mutual_inductance_list = np.array(mutual_inductance_list)
 
 plt.figure(figsize=(10, 8))
 
-plt.subplot(4, 1, 1)
-plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
-plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
-plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
-plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
-plt.title('Iq, Id Cmd + Sensed')
+plt.plot(speed_list[:, 0], torque, label='Torque')
+plt.title('Torque vs Speed')
 plt.legend()
 
-plt.subplot(4, 1, 2)
-plt.plot(time_points, Vqd_list[:, 0], label='Vq')
-plt.plot(time_points, Vqd_list[:, 1], label='Vd')
-plt.title('Vqd')
-plt.legend()
+# plt.subplot(4, 1, 1)
+# plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
+# plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
+# plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
+# plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
+# plt.title('Iq, Id Cmd + Sensed')
+# plt.legend()
 
-plt.subplot(4, 1, 3)
-plt.plot(time_points, currents[:, 0], label='Ia')
-plt.plot(time_points, currents[:, 1], label='Ib')
-plt.plot(time_points, currents[:, 2], label='Ic')
-plt.title('Currents')
-plt.legend()
+# plt.subplot(4, 1, 2)
+# plt.plot(time_points, Vqd_list[:, 0], label='Vq')
+# plt.plot(time_points, Vqd_list[:, 1], label='Vd')
+# plt.title('Vqd')
+# plt.legend()
 
-plt.subplot(4, 1, 4)
-plt.plot(time_points, bemf[:, 0], label='bemf_a')
-plt.plot(time_points, bemf[:, 1], label='bemf_b')
-plt.plot(time_points, bemf[:, 2], label='bemf_c')
-plt.title('Back-emf')
-plt.legend()
+# plt.subplot(4, 1, 3)
+# plt.plot(time_points, currents[:, 0], label='Ia')
+# plt.plot(time_points, currents[:, 1], label='Ib')
+# plt.plot(time_points, currents[:, 2], label='Ic')
+# plt.title('Currents')
+# plt.legend()
+
+# plt.subplot(4, 1, 4)
+# plt.plot(time_points, bemf[:, 0], label='bemf_a')
+# plt.plot(time_points, bemf[:, 1], label='bemf_b')
+# plt.plot(time_points, bemf[:, 2], label='bemf_c')
+# plt.title('Back-emf')
+# plt.legend()
 
 plt.tight_layout()
 plt.show()
