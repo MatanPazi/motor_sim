@@ -92,8 +92,12 @@ class Motor:
         """
         Is = np.sqrt(Iq**2 + Id**2)  # Total current magnitude
         # Assuming inductance reduces by half at peak current.
-        self.Lq = self.Lq_base * (1 - 0.5 * Is/self.i_max)
-        self.Ld = self.Ld_base * (1 - 0.5 * Is/self.i_max)
+        if (Is < self.i_max):
+            self.Lq = self.Lq_base * (1 - 0.5 * Is/self.i_max)
+            self.Ld = self.Ld_base * (1 - 0.5 * Is/self.i_max)
+        else:
+            self.Lq = self.Lq_base * 0.5
+            self.Ld = self.Ld_base * 0.5
     
     def inductance_abc(self, theta):
         """
