@@ -103,9 +103,9 @@ class Motor:
         """
         Update the inductances in the abc frame (Based on the dq transform)
         """        
-        self.Laa = self.Ld * (np.cos(theta))**2 + self.Lq * (np.sin(theta))**2
-        self.Lbb = self.Ld * (np.cos(theta - 2*np.pi/3))**2 + self.Lq * (np.sin(theta - 2*np.pi/3))**2
-        self.Lcc = self.Ld * (np.cos(theta + 2*np.pi/3))**2 + self.Lq * (np.sin(theta + 2*np.pi/3))**2
+        self.Laa = self.Lq * (np.cos(theta))**2 + self.Ld * (np.sin(theta))**2
+        self.Lbb = self.Lq * (np.cos(theta - 2*np.pi/3))**2 + self.Ld * (np.sin(theta - 2*np.pi/3))**2
+        self.Lcc = self.Lq * (np.cos(theta + 2*np.pi/3))**2 + self.Ld * (np.sin(theta + 2*np.pi/3))**2   
 
         # Mutual inductance - Assuming position dependency only.
         self.Lab = 0.5 * (self.Ld - self.Lq) * np.cos(2 * theta - 2*np.pi/3)
