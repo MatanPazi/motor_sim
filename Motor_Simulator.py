@@ -108,23 +108,23 @@ class Motor:
         self.Lcc = self.Lq * (np.cos(theta + 2*np.pi/3))**2 + self.Ld * (np.sin(theta + 2*np.pi/3))**2   
 
         # Mutual inductance - Assuming position dependency only.
-        self.Lab = 0.5 * (self.Ld - self.Lq) * np.cos(2 * theta - 2*np.pi/3)
-        self.Lac = 0.5 * (self.Ld - self.Lq) * np.cos(2 * theta + 2*np.pi/3)
-        self.Lbc = 0.5 * (self.Ld - self.Lq) * np.cos(2 * theta)
+        self.Lab = self.Lq * np.cos(theta) * np.cos(theta - 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta - 2*np.pi/3)
+        self.Lac = self.Lq * np.cos(theta) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta + 2*np.pi/3)
+        self.Lbc = self.Lq * np.cos(theta - 2*np.pi/3) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta - 2*np.pi/3) * np.sin(theta + 2*np.pi/3)
 
     def inductance_abc_dot(self, theta, speed):        
         """
         Update the inductances time derivatives
         """  
         # Derivatives for self inductances
-        self.Laa_dot = -(self.Ld - self.Lq) * np.sin(2 * theta) * speed
-        self.Lbb_dot = -(self.Ld - self.Lq) * np.sin(2 * theta + 2*np.pi/3) * speed
-        self.Lcc_dot = -(self.Ld - self.Lq) * np.sin(2 * theta - 2*np.pi/3) * speed
+        self.Laa_dot = -(self.Lq - self.Ld) * np.sin(2 * theta) * speed
+        self.Lbb_dot = -(self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
+        self.Lcc_dot = (self.Lq - self.Ld) * np.sin(2 * (theta + np.pi/6)) * speed
         
         # Derivatives for mutual inductances
-        self.Lab_dot = (self.Ld - self.Lq) * np.sin(2 * theta - 2*np.pi/3) * speed
-        self.Lac_dot = (self.Ld - self.Lq) * np.sin(2 * theta + 2*np.pi/3) * speed
-        self.Lbc_dot = (self.Ld - self.Lq) * np.sin(2 * theta) * speed
+        self.Lab_dot = (self.Lq - self.Ld) * np.cos(np.pi/6 - 2 * theta) * speed
+        self.Lac_dot = -(self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
+        self.Lbc_dot = -(self.Lq - self.Ld) * np.sin(2 * theta) * speed
 
     def phase_bemf(self, angle, phase_shift):
         """
