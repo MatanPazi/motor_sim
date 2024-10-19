@@ -147,7 +147,7 @@ class Motor:
         return torque
 
 class Simulation:
-    def __init__(self, time_step=100e-9, total_time=0.005):
+    def __init__(self, time_step=100e-9, total_time=0.05):
         '''
         Initializes simulation related parameters:
 
@@ -160,8 +160,8 @@ class Simulation:
         self.time_points = np.arange(0, total_time, time_step)
 
 class Application:
-    def __init__(self, speed_control=True, commanded_speed=700.0, commanded_iq=0.0, commanded_id=0.0,
-                 acceleration=200000.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = True):
+    def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=50.0, commanded_id=0.0,
+                 acceleration=0.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = False):
         '''
         Initializes application-related parameters:
         
@@ -595,37 +595,33 @@ mutual_inductance_list = np.array(mutual_inductance_list)
 
 plt.figure(figsize=(10, 8))
 
-plt.plot(speed_list[:, 0], torque, label='Torque')
-plt.title('Torque vs Speed')
+plt.subplot(4, 1, 1)
+plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
+plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
+plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
+plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
+plt.title('Iq, Id Cmd + Sensed')
 plt.legend()
 
-# plt.subplot(4, 1, 1)
-# plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
-# plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
-# plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
-# plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
-# plt.title('Iq, Id Cmd + Sensed')
-# plt.legend()
+plt.subplot(4, 1, 2)
+plt.plot(time_points, Vqd_list[:, 0], label='Vq')
+plt.plot(time_points, Vqd_list[:, 1], label='Vd')
+plt.title('Vqd')
+plt.legend()
 
-# plt.subplot(4, 1, 2)
-# plt.plot(time_points, Vqd_list[:, 0], label='Vq')
-# plt.plot(time_points, Vqd_list[:, 1], label='Vd')
-# plt.title('Vqd')
-# plt.legend()
+plt.subplot(4, 1, 3)
+plt.plot(time_points, currents[:, 0], label='Ia')
+plt.plot(time_points, currents[:, 1], label='Ib')
+plt.plot(time_points, currents[:, 2], label='Ic')
+plt.title('Currents')
+plt.legend()
 
-# plt.subplot(4, 1, 3)
-# plt.plot(time_points, currents[:, 0], label='Ia')
-# plt.plot(time_points, currents[:, 1], label='Ib')
-# plt.plot(time_points, currents[:, 2], label='Ic')
-# plt.title('Currents')
-# plt.legend()
-
-# plt.subplot(4, 1, 4)
-# plt.plot(time_points, bemf[:, 0], label='bemf_a')
-# plt.plot(time_points, bemf[:, 1], label='bemf_b')
-# plt.plot(time_points, bemf[:, 2], label='bemf_c')
-# plt.title('Back-emf')
-# plt.legend()
+plt.subplot(4, 1, 4)
+plt.plot(time_points, bemf[:, 0], label='bemf_a')
+plt.plot(time_points, bemf[:, 1], label='bemf_b')
+plt.plot(time_points, bemf[:, 2], label='bemf_c')
+plt.title('Back-emf')
+plt.legend()
 
 plt.tight_layout()
 plt.show()
@@ -633,6 +629,4 @@ plt.show()
 
 '''
 TODO:
-Update Github documentation
-    Reference: https://github.com/Abblix/Oidc.Server#readme
 '''
