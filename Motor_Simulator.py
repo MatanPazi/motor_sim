@@ -29,8 +29,8 @@ from scipy.integrate import solve_ivp
 import control as ctrl
 
 class Motor:
-    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.0029, Lq_base=0.0000685, Ld_base=0.0000435,
-                 bemf_const=0.1, inertia=0.0091, visc_fric_coeff=0.005, i_max = 600):
+    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.003, Lq_base=0.0001, Ld_base=0.00007,
+                 bemf_const=0.1, inertia=0.01, visc_fric_coeff=0.005, i_max = 600):
         '''
         Specifies motor-related parameters.
 
