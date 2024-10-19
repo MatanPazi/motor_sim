@@ -1,5 +1,3 @@
-# Not fully functioning yet
-
 # Motor Simulator
 
 This repository contains a Python-based motor simulator designed to aid in control algorithm development. The simulation allows fine-grained control over motor and application settings and supports real-time switching behavior and dead-time effects.
@@ -68,6 +66,8 @@ simulate_motor(motor, sim, app, control)
 
 
 ![WhatsApp Image 2024-10-15 at 09 22 12 (1)](https://github.com/user-attachments/assets/bb94a8ae-bd7f-450d-aa14-84b87683151c)
+
+![Figure_1](https://github.com/user-attachments/assets/569e7582-b96a-4df7-8a50-f53a09151bec)
 
 
 ## License
