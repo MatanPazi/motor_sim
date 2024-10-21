@@ -23,6 +23,7 @@ License:
 
 """
 
+from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -475,7 +476,7 @@ def simulate_motor(motor, sim, app, control):
     Ia, Ib, Ic = 0, 0, 0
     torque = 0
 
-    for t in sim.time_points:
+    for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
         # Speed ramp
         if app.speed_control:
