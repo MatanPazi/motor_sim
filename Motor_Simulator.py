@@ -270,7 +270,7 @@ def phase_current_ode(t, currents, va, vb, vc, motor):
     
     Solving as a linear matrix equation, Ax = b, where:
     
-    - A = L (inductance matrix) concatenated with ones to add Vn to the equations \n
+    - A = L (inductance matrix) concatenated with a row and a column of ones to add the KCL constraint and Vn to the equations \n
     - x = di/dt concatenated with Vn \n
     - b = v - i*R - i*dL/dt - bemf \n
 
