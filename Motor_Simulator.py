@@ -188,6 +188,7 @@ class Application:
         self.acceleration = acceleration
         self.current_ramp = current_ramp
         self.vBus = vBus
+        self.maxVAmp = vBus / np.sqrt(3)
         self.init_speed = init_speed
         self.short_circuit = short_circuit
 
@@ -511,7 +512,7 @@ def simulate_motor(motor, sim, app, control):
         error_list.append([error_iq, error_id])
         
         # Calculate dq voltage commands
-        Vq, Vd = control.pi_control(error_iq, error_id, t, Vq, Vd, app.vBus)
+        Vq, Vd = control.pi_control(error_iq, error_id, t, Vq, Vd, app.maxVAmp)
         Vqd_list.append([Vq, Vd])
         
         # Convert Vdq voltages to abc frame
