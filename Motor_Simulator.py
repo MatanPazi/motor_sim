@@ -215,7 +215,7 @@ class MotorControl:
         self.dead_time = dead_time
         self.saturation = 0
 
-    def pi_control(self, error_iq, error_id, current_time, Vq, Vd, vbus):
+    def pi_control(self, error_iq, error_id, current_time, Vq, Vd, maxVs):
         """
         Parallel current loop PI controller.
         """          
@@ -227,8 +227,8 @@ class MotorControl:
             Vd = self.Kp_d * error_id + self.Ki_d * self.integral_error_id
             self.last_update_time = current_time
             # Saturation handling (Clamping)
-            if ((Vq**2 + Vd**2) > vbus**2):
-                volt_amp_gain = vbus / np.sqrt(Vq**2 + Vd**2)
+            if ((Vq**2 + Vd**2) > maxVs**2):
+                volt_amp_gain = maxVs / np.sqrt(Vq**2 + Vd**2)
                 self.saturation = 1
                 Vq *= volt_amp_gain
                 Vd *= volt_amp_gain
