@@ -214,6 +214,7 @@ class MotorControl:
         self.last_update_time = 0
         self.dead_time = dead_time
         self.saturation = 0
+        self.svpwm_mod_fact = 2 / np.sqrt(3)
 
     def pi_control(self, error_iq, error_id, current_time, Vq, Vd, maxVs):
         """
@@ -389,6 +390,20 @@ def terminal_voltage_with_deadtime(Ia, Ib, Ic, pwm_signals_top, pwm_signals_bott
 
     return Va_Terminal, Vb_Terminal, Vc_Terminal
 
+def sine_to_svpwm(va_in, vb_in, vc_in, mod_factor):
+    va_out = va_in * mod_factor
+    vb_out = vb_in * mod_factor
+    vc_out = vc_in * mod_factor
+    v_offset = -(max(va_out, vb_out, vc_out) + min(va_out, vb_out, vc_out)) / 2
+
+    va_out += v_offset
+    vb_out += v_offset
+    vc_out += v_offset
+
+    return va_out, vb_out, vc_out
+    
+
+
 def estimate_BW():    
     '''
     Plots the bode plots of the close loop system response of the q and d axes.
@@ -516,7 +531,9 @@ def simulate_motor(motor, sim, app, control):
         Vqd_list.append([Vq, Vd])
         
         # Convert Vdq voltages to abc frame
-        Va, Vb, Vc = inverse_dq_transform(Vq, Vd, angle_e)
+        Va_sineMod, Vb_sineMod, Vc_sineMod = inverse_dq_transform(Vq, Vd, angle_e)
+        Va, Vb, Vc = sine_to_svpwm(Va_sineMod, Vb_sineMod, Vc_sineMod, control.svpwm_mod_fact)
+
         Vabc_list.append([Va, Vb, Vc])
 
         # Calculate transistor values including dead time        
@@ -631,5 +648,5 @@ plt.show()
 
 '''
 TODO:
-Update PWM modulation to SVPWM.
+
 '''
