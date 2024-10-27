@@ -87,11 +87,11 @@ class Motor:
 
         
 
-    def inductance_dq(self, Iq, Id):
+    def inductance_dq(self, iq, id):
         """
         Update the Lq, Ld inductances based on current amplitude
         """
-        Is = np.sqrt(Iq**2 + Id**2)  # Total current magnitude
+        Is = np.sqrt(iq**2 + id**2)  # Total current magnitude
         # Assuming inductance reduces by half at peak current.
         if (Is < self.i_max):
             self.Lq = self.Lq_base * (1 - 0.5 * Is/self.i_max)
@@ -137,14 +137,14 @@ class Motor:
                 bemf += data['mag'] * np.cos(data['harmonic'] * angle + phase_shift)        
         return bemf
 
-    def torque(self, Iq, Id):
+    def torque(self, iq, id):
         """
         Calculate Torque based on motor type: Synchronous or asynchronous
         """           
         if self.motor_type == "SYNC":
-            torque = 1.5 * self.pole_pairs * (self.flux_linkage * Iq + (self.Ld - self.Lq) * Iq * Id)
+            torque = 1.5 * self.pole_pairs * (self.flux_linkage * iq + (self.Ld - self.Lq) * iq * id)
         else: # ASYNC motor
-            torque = 1.5 * self.pole_pairs * (self.flux_linkage * Iq + (self.Ld - self.Lq) * Iq * Id) # TODO: Update equation for async motors
+            torque = 1.5 * self.pole_pairs * (self.flux_linkage * iq + (self.Ld - self.Lq) * iq * id) # TODO: Update equation for async motors
         return torque
 
 class Simulation:
@@ -162,7 +162,7 @@ class Simulation:
 
 class Application:
     def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=50.0, commanded_id=0.0,
-                 acceleration=0.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = False):
+                 acceleration=0.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
         '''
         Initializes application-related parameters:
         
@@ -175,7 +175,7 @@ class Application:
             commanded_id (float): Final commanded d-axis current [A].
             acceleration (float): Acceleration [rad/sec^2]. Instantaneous if set to 0.
             current_ramp (float): Rate of change in current [A/sec].
-            vBus (float): Supply voltage [V].
+            vbus (float): Supply voltage [V].
             init_speed (float): Initial speed [rad/sec].
             short_circuit (bool): 
                 - True: Activates short circuit at a certain predetermined time.
@@ -187,13 +187,13 @@ class Application:
         self.commanded_id = commanded_id
         self.acceleration = acceleration
         self.current_ramp = current_ramp
-        self.vBus = vBus
-        self.maxVAmp = vBus / np.sqrt(3)
+        self.vbus = vbus
+        self.max_volt_amp = vbus / np.sqrt(3)
         self.init_speed = init_speed
         self.short_circuit = short_circuit
 
 class MotorControl:
-    def __init__(self, Kp_d=0.2, Ki_d=50.0, Kp_q=0.2, Ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9):
+    def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9):
         '''
         Initializes control related parameters:
 
@@ -203,10 +203,10 @@ class MotorControl:
             sampling_time (float): Time between artificial controller updates [sec]
             dead_time (float): Time window which both top and bottom transistors are off [sec]
         '''
-        self.Kp_d = Kp_d
-        self.Ki_d = Ki_d
-        self.Kp_q = Kp_q
-        self.Ki_q = Ki_q
+        self.kp_d = kp_d
+        self.ki_d = ki_d
+        self.kp_q = kp_q
+        self.ki_q = ki_q
         self.sampling_time = sampling_time
         self.half_sampling_time = self.sampling_time / 2
         self.integral_error_iq = 0
@@ -216,7 +216,7 @@ class MotorControl:
         self.saturation = 0
         self.svpwm_mod_fact = 2 / np.sqrt(3)
 
-    def pi_control(self, error_iq, error_id, current_time, Vq, Vd, maxVs):
+    def pi_control(self, error_iq, error_id, current_time, vq, vd, max_vs):
         """
         Parallel current loop PI controller.
         """          
@@ -224,21 +224,21 @@ class MotorControl:
         if (current_time - self.last_update_time) >= self.sampling_time:
             self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
             self.integral_error_id += error_id * self.sampling_time * (1 - self.saturation)            
-            Vq = self.Kp_q * error_iq + self.Ki_q * self.integral_error_iq
-            Vd = self.Kp_d * error_id + self.Ki_d * self.integral_error_id
+            vq = self.kp_q * error_iq + self.ki_q * self.integral_error_iq
+            vd = self.kp_d * error_id + self.ki_d * self.integral_error_id
             self.last_update_time = current_time
             # Saturation handling (Clamping)
-            if ((Vq**2 + Vd**2) > maxVs**2):
-                volt_amp_gain = maxVs / np.sqrt(Vq**2 + Vd**2)
+            if ((vq**2 + vd**2) > max_vs**2):
+                volt_amp_gain = max_vs / np.sqrt(vq**2 + vd**2)
                 self.saturation = 1
-                Vq *= volt_amp_gain
-                Vd *= volt_amp_gain
+                vq *= volt_amp_gain
+                vd *= volt_amp_gain
             else:
                 self.saturation = 0
         else:
-            return Vq, Vd
+            return vq, vd
         
-        return Vq, Vd
+        return vq, vd
 
 def inverse_dq_transform(q, d, angle):
     '''
@@ -309,13 +309,13 @@ def phase_current_ode(t, currents, va, vb, vc, motor):
 
     return [di_a_dt, di_b_dt, di_c_dt]
 
-def center_aligned_pwm_with_deadtime(Va, Vb, Vc, Vbus, t, pwm_period, half_period, dead_time):
+def center_aligned_pwm_with_deadtime(va, vb, vc, vbus, t, pwm_period, half_period, dead_time):
     """
     Generates center-aligned PWM signals for top and bottom transistors with dead-time:
 
     Args:
         V (float): Terminal voltages [V]
-        Vbus (float): L bus voltage [V]
+        vbus (float): L bus voltage [V]
         t (float): time in simulation [sec]
         pwm_period (float): equals to the sampling time [sec]
         dead_time (float): dead time [sec]
@@ -328,9 +328,9 @@ def center_aligned_pwm_with_deadtime(Va, Vb, Vc, Vbus, t, pwm_period, half_perio
     time_in_period = t % pwm_period
 
     # Calculate duty cycles for each phase (between 0 and 1, default is 0.5)
-    duty_a = (Va / Vbus + 1) / 2
-    duty_b = (Vb / Vbus + 1) / 2
-    duty_c = (Vc / Vbus + 1) / 2
+    duty_a = (va / vbus + 1) / 2
+    duty_b = (vb / vbus + 1) / 2
+    duty_c = (vc / vbus + 1) / 2
 
     # Create a triangular carrier waveform
     carrier_wave = time_in_period / half_period if time_in_period < half_period else (pwm_period - time_in_period) / half_period
@@ -347,7 +347,7 @@ def center_aligned_pwm_with_deadtime(Va, Vb, Vc, Vbus, t, pwm_period, half_perio
     return np.array([pwm_a_top, pwm_b_top, pwm_c_top]), np.array([pwm_a_bottom, pwm_b_bottom, pwm_c_bottom])
 
 
-def terminal_voltage_with_deadtime(Ia, Ib, Ic, pwm_signals_top, pwm_signals_bottom):
+def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom):
     """
     Set the terminal voltages while taking dead time into account based on current direction:
 
@@ -359,36 +359,36 @@ def terminal_voltage_with_deadtime(Ia, Ib, Ic, pwm_signals_top, pwm_signals_bott
         V_terminal (float): Terminal voltages [V]
     """
     # Initialize applied voltages
-    Va_Terminal, Vb_Terminal, Vc_Terminal = 0, 0, 0
+    va_terminal, vb_terminal, vc_terminal = 0, 0, 0
 
     # Phase A
     if pwm_signals_top[0] == 0 and pwm_signals_bottom[0] == 0:
-        if Ia > 0:
-            Va_Terminal = 0  # Bottom transistor's voltage (ground)
+        if ia > 0:
+            va_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            Va_Terminal = app.vBus  # Top transistor's voltage (bus voltage)
+            va_terminal = app.vbus  # Top transistor's voltage (bus voltage)
     else:
-        Va_Terminal = pwm_signals_top[0] * app.vBus
+        va_terminal = pwm_signals_top[0] * app.vbus
 
     # Phase B
     if pwm_signals_top[1] == 0 and pwm_signals_bottom[1] == 0:
-        if Ib > 0:
-            Vb_Terminal = 0  # Bottom transistor's voltage (ground)
+        if ib > 0:
+            vb_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            Vb_Terminal = app.vBus  # Top transistor's voltage (bus voltage)
+            vb_terminal = app.vbus  # Top transistor's voltage (bus voltage)
     else:
-        Vb_Terminal = pwm_signals_top[1] * app.vBus
+        vb_terminal = pwm_signals_top[1] * app.vbus
 
     # Phase C
     if pwm_signals_top[2] == 0 and pwm_signals_bottom[2] == 0:
-        if Ic > 0:
-            Vc_Terminal = 0  # Bottom transistor's voltage (ground)
+        if ic > 0:
+            vc_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            Vc_Terminal = app.vBus  # Top transistor's voltage (bus voltage)
+            vc_terminal = app.vbus  # Top transistor's voltage (bus voltage)
     else:
-        Vc_Terminal = pwm_signals_top[2] * app.vBus
+        vc_terminal = pwm_signals_top[2] * app.vbus
 
-    return Va_Terminal, Vb_Terminal, Vc_Terminal
+    return va_terminal, vb_terminal, vc_terminal
 
 def sine_to_svpwm(va_in, vb_in, vc_in, mod_factor):
     va_out = va_in * mod_factor
@@ -414,9 +414,9 @@ def estimate_BW():
     num_q = [1]
     den_q = [motor.Lq, motor.Rs]
     # PI transfer function: G(s) = (Kp * s + Ki) / (s)
-    num_pi_d = [control.Kp_d, control.Ki_d]
+    num_pi_d = [control.kp_d, control.ki_d]
     den_pi_d = [1, 0]
-    num_pi_q = [control.Kp_q, control.Ki_q]
+    num_pi_q = [control.kp_q, control.ki_q]
     den_pi_q = [1, 0]    
 
     # Create transfer functions
@@ -467,10 +467,10 @@ speed_list = []
 iqd_ramped_list = []
 iqd_sensed_list = []
 error_list = []
-Vqd_list = []
-Vabc_list = []
+vqd_list = []
+vabc_list = []
 pwm_list = []
-V_terminal = []
+v_terminal = []
 bemf = []
 currents = []    
 torque_list = []
@@ -487,9 +487,9 @@ def simulate_motor(motor, sim, app, control):
     angle_e = 0
     iq_ramped = 0
     id_ramped = 0
-    Vq = 0
-    Vd = 0
-    Ia, Ib, Ic = 0, 0, 0
+    vq = 0
+    vd = 0
+    ia, ib, ic = 0, 0, 0
     torque = 0
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
@@ -518,28 +518,28 @@ def simulate_motor(motor, sim, app, control):
         iqd_ramped_list.append([iq_ramped, id_ramped])
 
         # Convert abc frame currents to dq currents
-        Iq_sensed, Id_sensed = dq_transform(Ia, Ib, Ic, angle_e)
-        iqd_sensed_list.append([Iq_sensed, Id_sensed])
+        iq_sensed, id_sensed = dq_transform(ia, ib, ic, angle_e)
+        iqd_sensed_list.append([iq_sensed, id_sensed])
         
         # Errors
-        error_iq = iq_ramped - Iq_sensed
-        error_id = id_ramped - Id_sensed    
+        error_iq = iq_ramped - iq_sensed
+        error_id = id_ramped - id_sensed    
         error_list.append([error_iq, error_id])
         
         # Calculate dq voltage commands
-        Vq, Vd = control.pi_control(error_iq, error_id, t, Vq, Vd, app.maxVAmp)
-        Vqd_list.append([Vq, Vd])
+        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.max_volt_amp)
+        vqd_list.append([vq, vd])
         
         # Convert Vdq voltages to abc frame
-        Va_sineMod, Vb_sineMod, Vc_sineMod = inverse_dq_transform(Vq, Vd, angle_e)
-        Va, Vb, Vc = sine_to_svpwm(Va_sineMod, Vb_sineMod, Vc_sineMod, control.svpwm_mod_fact)
+        va_sineMod, vb_sineMod, vc_sineMod = inverse_dq_transform(vq, vd, angle_e)
+        va, vb, vc = sine_to_svpwm(va_sineMod, vb_sineMod, vc_sineMod, control.svpwm_mod_fact)
 
-        Vabc_list.append([Va, Vb, Vc])
+        vabc_list.append([va, vb, vc])
 
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
         if (app.short_circuit == False):# or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
-            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(Va, Vb, Vc, app.vBus, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
+            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, app.vbus, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
         else:
             pwm_signals_top = [0, 0, 0]
             pwm_signals_bottom = [1, 1, 1]                    
@@ -547,11 +547,11 @@ def simulate_motor(motor, sim, app, control):
         pwm_list.append([pwm_signals_top, pwm_signals_bottom])
 
         # Calculate terminal voltages including dead time (Terminal voltage are the voltages commanded by the drive unit, not the actual phase voltages.)
-        Va_Terminal, Vb_Terminal, Vc_Terminal = terminal_voltage_with_deadtime(Ia, Ib, Ic, pwm_signals_top, pwm_signals_bottom)
-        V_terminal.append([Va_Terminal, Vb_Terminal, Vc_Terminal])
+        va_terminal, vb_terminal, vc_terminal = terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom)
+        v_terminal.append([va_terminal, vb_terminal, vc_terminal])
 
         # Update Ld, Lq
-        motor.inductance_dq(Iq_sensed, Id_sensed)
+        motor.inductance_dq(iq_sensed, id_sensed)
         dq_inductance_list.append([motor.Lq, motor.Ld])
         
         # Update self and mutual phase inductances
@@ -569,13 +569,13 @@ def simulate_motor(motor, sim, app, control):
         bemf.append([motor.bemf_a, motor.bemf_b, motor.bemf_c])
 
         # Solve the ODE for phase currents over one time step
-        sol = solve_ivp(phase_current_ode, [t, t + sim.time_step], [Ia, Ib, Ic],
-                        args=(Va_Terminal, Vb_Terminal, Vc_Terminal, motor), method='RK45')    
+        sol = solve_ivp(phase_current_ode, [t, t + sim.time_step], [ia, ib, ic],
+                        args=(va_terminal, vb_terminal, vc_terminal, motor), method='RK45')    
 
-        Ia, Ib, Ic = sol.y[:, -1]
-        currents.append([Ia, Ib, Ic])        
+        ia, ib, ic = sol.y[:, -1]
+        currents.append([ia, ib, ic])        
 
-        torque = motor.torque(Iq_sensed, Id_sensed)
+        torque = motor.torque(iq_sensed, id_sensed)
         torque_list.append(torque)
 
         angle_m += speed_m * sim.time_step
@@ -600,10 +600,10 @@ speed_list = np.array(speed_list)
 iqd_ramped_list = np.array(iqd_ramped_list)
 iqd_sensed_list = np.array(iqd_sensed_list)
 error_list = np.array(error_list)
-Vqd_list = np.array(Vqd_list)
-Vabc_list = np.array(Vabc_list)
+vqd_list = np.array(vqd_list)
+vabc_list = np.array(vabc_list)
 pwm_list = np.array(pwm_list)
-V_terminal = np.array(V_terminal)
+v_terminal = np.array(v_terminal)
 bemf = np.array(bemf)
 currents = np.array(currents)
 torque = np.array(torque_list)
@@ -619,12 +619,12 @@ plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
 plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
 plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
 plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
-plt.title('Iq, Id Cmd + Sensed')
+plt.title('iq, Id Cmd + Sensed')
 plt.legend()
 
 plt.subplot(4, 1, 2)
-plt.plot(time_points, Vqd_list[:, 0], label='Vq')
-plt.plot(time_points, Vqd_list[:, 1], label='Vd')
+plt.plot(time_points, vqd_list[:, 0], label='Vq')
+plt.plot(time_points, vqd_list[:, 1], label='Vd')
 plt.title('Vqd')
 plt.legend()
 
