@@ -8,7 +8,7 @@ This repository contains a Python-based motor simulator designed to aid in contr
 - Takes into account mutual and self inductances, as well as inductance saturation and inductance time derivatives
 - Accounts for dead-time and switching behavior
 - Supports back-emf harmonics
-- Allows the simulation of short-circuiting all phases under defined conditions.
+- Allows the simulation of short-circuiting all phases
 
 ## How It Works
 
