@@ -53,7 +53,7 @@ sim = Simulation()
 app = Application()
 control = MotorControl()
 
-# Uncommend to show closed loop bode plots of q and d axes:
+# Uncomment to show closed loop bode plots of q and d axes:
 # estimate_BW()
 
 # Run the simulation
