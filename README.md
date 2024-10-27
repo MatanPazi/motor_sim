@@ -26,7 +26,7 @@ And the user can plot anything they wish:
 
 ## Usage
 
-Modify parameters by directly adjusting the class initialization in the script. Example:
+Modify parameters by directly adjusting the class initialization in the script:
 
 ```python
 class Motor:
