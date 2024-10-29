@@ -188,7 +188,7 @@ class Application:
         self.acceleration = acceleration
         self.current_ramp = current_ramp
         self.vbus = vbus
-        self.max_volt_amp = vbus / np.sqrt(3)
+        self.max_vs = vbus / np.sqrt(3)
         self.init_speed = init_speed
         self.short_circuit = short_circuit
 
@@ -309,13 +309,13 @@ def phase_current_ode(t, currents, va, vb, vc, motor):
 
     return [di_a_dt, di_b_dt, di_c_dt]
 
-def center_aligned_pwm_with_deadtime(va, vb, vc, vbus, t, pwm_period, half_period, dead_time):
+def center_aligned_pwm_with_deadtime(va, vb, vc, max_vs, t, pwm_period, half_period, dead_time):
     """
     Generates center-aligned PWM signals for top and bottom transistors with dead-time:
 
     Args:
-        V (float): Terminal voltages [V]
-        vbus (float): L bus voltage [V]
+        v (float): phase voltages [V]
+        max_vs (float): max phase voltage (Modulation dependent) [V]
         t (float): time in simulation [sec]
         pwm_period (float): equals to the sampling time [sec]
         dead_time (float): dead time [sec]
@@ -328,9 +328,9 @@ def center_aligned_pwm_with_deadtime(va, vb, vc, vbus, t, pwm_period, half_perio
     time_in_period = t % pwm_period
 
     # Calculate duty cycles for each phase (between 0 and 1, default is 0.5)
-    duty_a = (va / vbus + 1) / 2
-    duty_b = (vb / vbus + 1) / 2
-    duty_c = (vc / vbus + 1) / 2
+    duty_a = (va / max_vs + 1) / 2
+    duty_b = (vb / max_vs + 1) / 2
+    duty_c = (vc / max_vs + 1) / 2
 
     # Create a triangular carrier waveform
     carrier_wave = time_in_period / half_period if time_in_period < half_period else (pwm_period - time_in_period) / half_period
@@ -537,7 +537,7 @@ def simulate_motor(motor, sim, app, control):
         error_list.append([error_iq, error_id])
         
         # Calculate dq voltage commands
-        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.max_volt_amp)
+        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.max_vs)
         vqd_list.append([vq, vd])
         
         # Convert Vdq voltages to abc frame
