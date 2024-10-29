@@ -70,6 +70,14 @@ simulate_motor(motor, sim, app, control)
 ![Figure_1](https://github.com/user-attachments/assets/569e7582-b96a-4df7-8a50-f53a09151bec)
 
 
+## Dependencies
+This project requires the following Python modules:
+- control: https://python-control.readthedocs.io/en/0.10.1/index.html
+- scipy
+- matplotlib
+- numpy
+- tqdm: https://tqdm.github.io/
+
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
@@ -77,5 +85,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Inspired by Ben Katz's motor simulator:
   https://build-its-inprogress.blogspot.com/2016/12/some-motor-math-and-simulation.html.
   I saw he built a motor simulator in MATLAB which made me want to build a motor simulator in Python.
-
-- Many thanks to ChatGPT for helping me write this README file :).
