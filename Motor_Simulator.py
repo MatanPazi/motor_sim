@@ -391,6 +391,16 @@ def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bott
     return va_terminal, vb_terminal, vc_terminal
 
 def sine_to_svpwm(va_in, vb_in, vc_in, mod_factor):
+    """
+    Converts the phase voltages from sinusoidal modulation to space vector modulation
+    
+    Args:
+        v_in (float): phase voltages sinusoidally modulated [V]
+        mod_factor (float): space vector modulation factor 2/sqrt(3)
+
+    Returns:
+        v_out (float): phase voltages in space vector modulation [V]
+    """    
     va_out = va_in * mod_factor
     vb_out = vb_in * mod_factor
     vc_out = vc_in * mod_factor
