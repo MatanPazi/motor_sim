@@ -488,6 +488,8 @@ angle_list = []
 dq_inductance_list = []
 self_inductance_list = []
 mutual_inductance_list = []
+self_inductance_dot_list = []
+mutual_inductance_dot_list = []
 
 def simulate_motor(motor, sim, app, control):
     # Initializations
@@ -571,6 +573,8 @@ def simulate_motor(motor, sim, app, control):
 
         # Update self and mutual phase inductances time derivatives
         motor.inductance_abc_dot(angle_e, speed_e)
+        self_inductance_dot_list.append([motor.Laa_dot, motor.Lbb_dot, motor.Lcc_dot])
+        mutual_inductance_dot_list.append([motor.Lab_dot, motor.Lac_dot, motor.Lbc_dot])
 
         # Calculate the phases bemf
         motor.bemf_a = speed_m * motor.phase_bemf(angle_e, 0)
@@ -621,6 +625,8 @@ angle_list = np.array(angle_list)
 dq_inductance_list = np.array(dq_inductance_list)
 self_inductance_list = np.array(self_inductance_list)
 mutual_inductance_list = np.array(mutual_inductance_list)
+self_inductance_dot_list = np.array(self_inductance_dot_list)
+mutual_inductance_dot_list = np.array(mutual_inductance_dot_list)
 
 plt.figure(figsize=(10, 8))
 
