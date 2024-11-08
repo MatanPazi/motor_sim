@@ -414,7 +414,7 @@ def sine_to_svpwm(va_in, vb_in, vc_in, mod_factor):
     
 
 
-def estimate_BW():    
+def estimate_BW(control):    
     '''
     Plots the bode plots of the close loop system response of the q and d axes.
     '''
@@ -428,6 +428,9 @@ def estimate_BW():
     den_pi_d = [1, 0]
     num_pi_q = [control.kp_q, control.ki_q]
     den_pi_q = [1, 0]    
+    # Delay transfer function pade approxmation
+    delay = control.sampling_time * 1.25
+    num_delay, den_delay = ctrl.pade(delay, 5)
 
     # Create transfer functions
     G_d = ctrl.TransferFunction(num_d, den_d)
@@ -436,9 +439,11 @@ def estimate_BW():
     G_q = ctrl.TransferFunction(num_q, den_q)
     PI_q = ctrl.TransferFunction(num_pi_q, den_pi_q)
 
-    OL_d = ctrl.series(G_d, PI_d)
+    G_delay = ctrl.TransferFunction(num_delay, den_delay)
+
+    OL_d = ctrl.series(G_d, PI_d, G_delay)
     CL_d = ctrl.feedback(OL_d,1)
-    OL_q = ctrl.series(G_q, PI_q)
+    OL_q = ctrl.series(G_q, PI_q, G_delay)
     CL_q = ctrl.feedback(OL_q,1)
 
     # Plot Bode plots
@@ -603,7 +608,7 @@ app = Application()
 control = MotorControl()
 
 # Uncomment to show closed loop bode plots of q and d axes:
-# estimate_BW()
+# estimate_BW(control)
 
 # Run the simulation
 simulate_motor(motor, sim, app, control)
