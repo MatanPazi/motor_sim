@@ -431,7 +431,7 @@ def estimate_BW(control):
     num_pi_q = [control.kp_q, control.ki_q]
     den_pi_q = [1, 0]    
     # Delay transfer function pade approxmation
-    delay = control.sampling_time * 1.25
+    delay = control.sampling_time * 1.5
     num_delay, den_delay = ctrl.pade(delay, 5)
 
     # Create transfer functions
