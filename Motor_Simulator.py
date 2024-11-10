@@ -220,7 +220,7 @@ class MotorControl:
         """
         Parallel current loop PI controller.
         """          
-        # Only update the control at the specified sampling time step
+        # Update voltages evey sampling time step
         if (current_time - self.last_update_time) >= self.sampling_time:
             self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
             self.integral_error_id += error_id * self.sampling_time * (1 - self.saturation)            
@@ -229,8 +229,10 @@ class MotorControl:
             self.last_update_time = current_time
             # Saturation handling (Clamping)
             if ((vq**2 + vd**2) > max_vs**2):
-                volt_amp_gain = max_vs / np.sqrt(vq**2 + vd**2)
+                # Clamp integrals
                 self.saturation = 1
+                # Prevent exceeding max vs
+                volt_amp_gain = max_vs / np.sqrt(vq**2 + vd**2)                
                 vq *= volt_amp_gain
                 vd *= volt_amp_gain
             else:
