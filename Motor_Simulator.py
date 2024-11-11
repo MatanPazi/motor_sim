@@ -485,6 +485,7 @@ iqd_ramped_list = []
 iqd_sensed_list = []
 error_list = []
 vqd_list = []
+vabc_sine_mod_list = []
 vabc_list = []
 pwm_list = []
 v_terminal = []
@@ -551,8 +552,10 @@ def simulate_motor(motor, sim, app, control):
         
         # Convert Vdq voltages to abc frame
         va_sineMod, vb_sineMod, vc_sineMod = inverse_dq_transform(vq, vd, angle_e)
+        vabc_sine_mod_list.append([va_sineMod, vb_sineMod, vc_sineMod])
+        
+        # Convert sinusoidal modulation to SVPWM
         va, vb, vc = sine_to_svpwm(va_sineMod, vb_sineMod, vc_sineMod, control.svpwm_mod_fact)
-
         vabc_list.append([va, vb, vc])
 
         # Calculate transistor values including dead time        
@@ -622,6 +625,7 @@ iqd_ramped_list = np.array(iqd_ramped_list)
 iqd_sensed_list = np.array(iqd_sensed_list)
 error_list = np.array(error_list)
 vqd_list = np.array(vqd_list)
+vabc_sine_mod_list = np.array(vabc_sine_mod_list)
 vabc_list = np.array(vabc_list)
 pwm_list = np.array(pwm_list)
 v_terminal = np.array(v_terminal)
