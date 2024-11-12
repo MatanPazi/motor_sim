@@ -450,10 +450,10 @@ def estimate_BW(control):
 
     # Plot Bode plots
     plt.figure(1)
-    # Change plot to True if you wish to view other bode plots aside from the closed loop response.
+    # Uncomment bode you wish to plot
     # ctrl.bode_plot(G_d, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Plant', title = '')
     # ctrl.bode_plot(PI_d, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'PI', title = '')
-    # ctrl.bode_plot(OL_d, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Open loop', title = '')
+    ctrl.bode_plot(OL_d, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Open loop', title = '')
     ctrl.bode_plot(CL_d, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Closed loop', title = '')
 
     # Finding first index where magnitude is lower than -3dB to find BW
@@ -464,10 +464,10 @@ def estimate_BW(control):
     plt.legend()
 
     plt.figure(2)
-    # Change plot to True if you wish to view other bode plots aside from the closed loop response.
+    # Uncomment bode you wish to plot
     # ctrl.bode_plot(G_q, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Plant', title = '')
     # ctrl.bode_plot(PI_q, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'PI', title = '')
-    # ctrl.bode_plot(OL_q, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Open loop', title = '')
+    ctrl.bode_plot(OL_q, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Open loop', title = '')
     ctrl.bode_plot(CL_q, dB=True, Hz=True, omega_limits=(10e0, 10e4), plot=True, label = 'Closed loop', title = '')
 
     # Finding first index where magnitude is lower than -3dB to find BW
