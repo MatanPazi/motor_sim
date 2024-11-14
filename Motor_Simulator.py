@@ -214,7 +214,7 @@ class MotorControl:
         self.last_update_time = 0
         self.dead_time = dead_time
         self.saturation = 0
-        self.svpwm_mod_fact = 2 / np.sqrt(3)
+        self.mod_fact = 2 / np.sqrt(3)
 
     def pi_control(self, error_iq, error_id, current_time, vq, vd, max_vs):
         """
@@ -392,16 +392,16 @@ def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bott
 
     return va_terminal, vb_terminal, vc_terminal
 
-def sine_to_svpwm(va_in, vb_in, vc_in, mod_factor):
+def third_harmonic(va_in, vb_in, vc_in, mod_factor):
     """
-    Converts the phase voltages from sinusoidal modulation to space vector modulation
+    Add a third harmonic approximation (Not a true harmonic, but rather a triangular waveform)
     
     Args:
         v_in (float): phase voltages sinusoidally modulated [V]
-        mod_factor (float): space vector modulation factor 2/sqrt(3)
+        mod_factor (float): third harmonic factor 2/sqrt(3)
 
     Returns:
-        v_out (float): phase voltages in space vector modulation [V]
+        v_out (float): phase voltages [V]
     """    
     va_out = va_in * mod_factor
     vb_out = vb_in * mod_factor
@@ -554,8 +554,8 @@ def simulate_motor(motor, sim, app, control):
         va_sineMod, vb_sineMod, vc_sineMod = inverse_dq_transform(vq, vd, angle_e)
         vabc_sine_mod_list.append([va_sineMod, vb_sineMod, vc_sineMod])
         
-        # Convert sinusoidal modulation to SVPWM
-        va, vb, vc = sine_to_svpwm(va_sineMod, vb_sineMod, vc_sineMod, control.svpwm_mod_fact)
+        # Add third harmonic approx. to sinusoidal modulation.
+        va, vb, vc = third_harmonic(va_sineMod, vb_sineMod, vc_sineMod, control.mod_fact)
         vabc_list.append([va, vb, vc])
 
         # Calculate transistor values including dead time        
