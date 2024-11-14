@@ -498,6 +498,8 @@ self_inductance_list = []
 mutual_inductance_list = []
 self_inductance_dot_list = []
 mutual_inductance_dot_list = []
+phase_volt_diff = []
+phase_volt_diff_sine_mod = []
 
 def simulate_motor(motor, sim, app, control):
     # Initializations
@@ -557,6 +559,9 @@ def simulate_motor(motor, sim, app, control):
         # Add third harmonic approx. to sinusoidal modulation.
         va, vb, vc = third_harmonic(va_sineMod, vb_sineMod, vc_sineMod, control.mod_fact)
         vabc_list.append([va, vb, vc])
+
+        phase_volt_diff.append([va-vb, vb-vc, vc-va])
+        phase_volt_diff_sine_mod.append([va_sineMod-vb_sineMod, vb_sineMod-vc_sineMod, vc_sineMod-va_sineMod])
 
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
@@ -638,6 +643,8 @@ self_inductance_list = np.array(self_inductance_list)
 mutual_inductance_list = np.array(mutual_inductance_list)
 self_inductance_dot_list = np.array(self_inductance_dot_list)
 mutual_inductance_dot_list = np.array(mutual_inductance_dot_list)
+phase_volt_diff = np.array(phase_volt_diff)
+phase_volt_diff_sine_mod = np.array(phase_volt_diff_sine_mod)
 
 plt.figure(figsize=(10, 8))
 
