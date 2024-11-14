@@ -188,7 +188,7 @@ class Application:
         self.acceleration = acceleration
         self.current_ramp = current_ramp
         self.vbus = vbus
-        self.max_vs = vbus / np.sqrt(3)
+        self.max_vs = vbus / 2
         self.init_speed = init_speed
         self.short_circuit = short_circuit
 
