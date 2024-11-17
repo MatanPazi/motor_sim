@@ -334,7 +334,7 @@ def center_aligned_pwm_with_deadtime(va, vb, vc, max_vs, t, pwm_period, half_per
     duty_b = (vb / max_vs + 1) / 2
     duty_c = (vc / max_vs + 1) / 2
 
-    # Create a triangular carrier waveform
+    # Find position along triangular carrier waveform
     carrier_wave = time_in_period / half_period if time_in_period < half_period else (pwm_period - time_in_period) / half_period
 
     # Generate the top and bottom PWM signals w/ dead time compensation (1 for high, 0 for low)
