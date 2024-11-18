@@ -1,4 +1,5 @@
 import os
+import platform
 from manim import *
 
 class HelloWorld(Scene):
@@ -16,5 +17,10 @@ if __name__ == "__main__":
 
     # Render the scene
     HelloWorld().render()
+
     # Automatically open the output file
-    os.system(f"xdg-open {config.output_file}")
+    if platform.system() == 'Windows':
+        os.system(f"start {config.output_file}")
+        input("Press Enter to exit...")  # Prevents the script from closing immediately. Need in Windows for some reason
+    else:
+        os.system(f"xdg-open {config.output_file}")
