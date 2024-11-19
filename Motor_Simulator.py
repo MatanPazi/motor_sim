@@ -162,7 +162,7 @@ class Simulation:
 
 class Application:
     def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=50.0, commanded_id=0.0,
-                 acceleration=0.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
+                 acceleration=20000.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
         '''
         Initializes application-related parameters:
         
