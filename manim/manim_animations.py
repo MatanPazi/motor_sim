@@ -228,8 +228,8 @@ class ElectricalModel(Scene):
         self.wait(4)
 
         # Create arrows between the equations
-        arrow1 = DoubleArrow(color=GREEN, start=eq1.get_center(), end=eq2.get_center(), tip_length=0.4, stroke_width=6)
-        arrow2 = DoubleArrow(color=GREEN, start=eq2.get_center(), end=eq3.get_center(), tip_length=0.4, stroke_width=6)
+        arrow1 = DoubleArrow(color=GREEN, start=eq1.get_center(), end=eq2.get_center(), tip_length=0.4, stroke_width=9)
+        arrow2 = DoubleArrow(color=GREEN, start=eq2.get_center(), end=eq3.get_center(), tip_length=0.4, stroke_width=9)
 
         # Adjust the third arrow to move it to the side
         arrow3 = DoubleArrow(
@@ -237,12 +237,12 @@ class ElectricalModel(Scene):
             start=eq3.get_center() + LEFT * 2,  # Offset to the left
             end=eq1.get_center() + LEFT * 2,   # Offset to the right
             tip_length=0.4,
-            stroke_width=6
+            stroke_width=9
         )
 
         # Add arrows to the scene
-        self.play(Create(arrow1), Create(arrow2), Create(arrow3), run_time=1)
-        self.wait(2)
+        self.play(Create(arrow1), Create(arrow2), Create(arrow3), run_time=0.2)
+        self.wait(4)
     
 
       
