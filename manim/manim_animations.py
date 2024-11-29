@@ -243,7 +243,31 @@ class ElectricalModel(Scene):
         # Add arrows to the scene
         self.play(Create(arrow1), Create(arrow2), Create(arrow3), run_time=0.2)
         self.wait(4)
-    
+
+        self.play(FadeOut(arrow1), FadeOut(arrow2), FadeOut(arrow3))
+        self.wait(2)
+
+        # Define the transformed equations with V_n already present and emphasized in red
+        transformed_eq1 = MathTex(
+            r"V_a = i_a \cdot r + L_a \cdot \frac{di_a}{dt} + L_{ab} \cdot \frac{di_b}{dt} + L_{ac} \cdot \frac{di_c}{dt} + \left( i_a \cdot \frac{dL_a}{d\theta} + i_b \cdot \frac{dL_{ab}}{d\theta} + i_c \cdot \frac{dL_{ac}}{d\theta} + \frac{d\lambda_a}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(eq1.get_center())
+
+        transformed_eq2 = MathTex(
+            r"V_b = i_b \cdot r + L_b \cdot \frac{di_b}{dt} + L_{ab} \cdot \frac{di_a}{dt} + L_{bc} \cdot \frac{di_c}{dt} + \left( i_b \cdot \frac{dL_b}{d\theta} + i_a \cdot \frac{dL_{ab}}{d\theta} + i_c \cdot \frac{dL_{bc}}{d\theta} + \frac{d\lambda_b}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(eq2.get_center())
+
+        transformed_eq3 = MathTex(
+            r"V_c = i_c \cdot r + L_c \cdot \frac{di_c}{dt} + L_{ac} \cdot \frac{di_a}{dt} + L_{bc} \cdot \frac{di_b}{dt} + \left( i_c \cdot \frac{dL_c}{d\theta} + i_b \cdot \frac{dL_{bc}}{d\theta} + i_a \cdot \frac{dL_{ac}}{d\theta} + \frac{d\lambda_c}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(eq3.get_center())
+        
+        # Add highlighting of V_n
+        transformed_eq1[0][-2:].set_color(RED)
+        transformed_eq2[0][-2:].set_color(RED)
+        transformed_eq3[0][-2:].set_color(RED)
+
+        # Animate the transformations and emphasize the already included V_n
+        self.play(Transform(eq1, transformed_eq1), Transform(eq2, transformed_eq2), Transform(eq3, transformed_eq3))
+        self.wait(2)    
 
       
 
