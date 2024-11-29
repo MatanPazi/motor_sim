@@ -247,7 +247,41 @@ class ElectricalModel(Scene):
 
       
 
+class SineWaves120ChgAmp(Scene):
+    def construct(self):
+        # Create Axes for the plot
+        axes = Axes(
+            x_range=[0, 2 * PI, PI / 2], y_range=[-2, 2, 1],
+            x_length=7, y_length=4.5,
+            axis_config={"include_tip": False},
+        ).to_edge(UP)
 
+        # Define the sine waves
+        sine1 = axes.plot(lambda x: np.sin(1.5 * x), color=RED, x_range=[0, 2 * PI])
+        sine2 = axes.plot(lambda x: np.sin(1.5 * x - 2 * PI / 3), color=GREEN, x_range=[0, 2 * PI])
+        sine3 = axes.plot(lambda x: np.sin(1.5 * x + 2 * PI / 3), color=BLUE, x_range=[0, 2 * PI])
+
+        # Add labels
+        label1 = MathTex("y_1 = \\sin(x)", color=RED).scale(0.8).next_to(axes, 6*LEFT)
+        label2 = MathTex("y_2 = \\sin(x - 120^\\circ)", color=GREEN).scale(0.8).next_to(label1, DOWN, aligned_edge=LEFT)
+        label3 = MathTex("y_3 = \\sin(x + 120^\\circ)", color=BLUE).scale(0.8).next_to(label2, DOWN, aligned_edge=LEFT)
+
+        # Add the equation for the sum
+        sum_eq = MathTex("y_1 + y_2 + y_3 = 0").scale(1.2).next_to(axes, DOWN)
+
+        # Display the initial waves and sum equation
+        self.play(Create(axes), Write(label1), Write(label2), Write(label3))
+        self.play(Create(sine1), Create(sine2), Create(sine3))
+        self.wait(1)
+        self.play(Write(sum_eq))
+        self.wait(2)
+
+        # Increase the amplitude of one wave and update the equation
+        modified_sine1 = axes.plot(lambda x: 1.5*np.sin(1.5 * x), color=RED, x_range=[0, 2 * PI])
+        new_sum_eq = MathTex("y_1 + y_2 + y_3 \\neq 0").move_to(sum_eq)
+
+        self.play(Transform(sine1, modified_sine1), Transform(sum_eq, new_sum_eq))
+        self.wait(2)
 
 
 
