@@ -266,8 +266,72 @@ class ElectricalModel(Scene):
         transformed_eq3[0][-2:].set_color(RED)
 
         # Animate the transformations and emphasize the already included V_n
-        self.play(Transform(eq1, transformed_eq1), Transform(eq2, transformed_eq2), Transform(eq3, transformed_eq3))
-        self.wait(2)    
+        self.play(TransformMatchingShapes(eq1, transformed_eq1), TransformMatchingShapes(eq2, transformed_eq2), TransformMatchingShapes(eq3, transformed_eq3))
+        self.wait(5)
+
+        transformed_eq1[0][-2:].set_color(WHITE)
+        transformed_eq2[0][-2:].set_color(WHITE)
+        transformed_eq3[0][-2:].set_color(WHITE)        
+
+        # Define the target equations
+        target_eq1 = MathTex(
+            r"L_a \cdot \frac{di_a}{dt} + L_{ab} \cdot \frac{di_b}{dt} + L_{ac} \cdot \frac{di_c}{dt} = "
+            r"V_a - i_a \cdot r + \left( i_a \cdot \frac{dL_a}{d\theta} + i_b \cdot \frac{dL_{ab}}{d\theta} + i_c \cdot \frac{dL_{ac}}{d\theta} + \frac{d\lambda_a}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(transformed_eq1.get_center())
+
+        target_eq2 = MathTex(
+            r"L_b \cdot \frac{di_b}{dt} + L_{ab} \cdot \frac{di_a}{dt} + L_{bc} \cdot \frac{di_c}{dt} = "
+            r"V_b - i_b \cdot r + \left( i_b \cdot \frac{dL_b}{d\theta} + i_a \cdot \frac{dL_{ab}}{d\theta} + i_c \cdot \frac{dL_{bc}}{d\theta} + \frac{d\lambda_b}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(transformed_eq2.get_center())
+
+        target_eq3 = MathTex(
+            r"L_c \cdot \frac{di_c}{dt} + L_{ac} \cdot \frac{di_a}{dt} + L_{bc} \cdot \frac{di_b}{dt} = "
+            r"V_c - i_c \cdot r + \left( i_c \cdot \frac{dL_c}{d\theta} + i_b \cdot \frac{dL_{cb}}{d\theta} + i_a \cdot \frac{dL_{ac}}{d\theta} + \frac{d\lambda_c}{d\theta} \right) \cdot \omega + V_n"
+        ).scale(0.65).move_to(transformed_eq3.get_center())
+
+        # Apply transformations
+        self.play(
+            TransformMatchingShapes(transformed_eq1, target_eq1),
+            TransformMatchingShapes(transformed_eq2, target_eq2),
+            TransformMatchingShapes(transformed_eq3, target_eq3),
+            run_time=3
+        )        
+        
+        self.wait(4)
+        
+        self.play(
+            *[FadeOut(mob) for mob in self.mobjects]
+        )  
+
+        simplified_eq = MathTex(
+            r"L \cdot \frac{di}{dt} = V - i \cdot r + \omega \cdot \left( i \cdot \frac{dL}{d\theta} - \frac{d\lambda}{d\theta} \right) + V_n"
+        ).scale(1).move_to(UP)
+
+        self.play(Write(simplified_eq))
+
+        self.wait(4)
+        
+        # Add underbraces directly to the existing equation
+        underbrace_L = Brace(simplified_eq[0][0], DOWN, buff=0.2)
+        text_L = underbrace_L.get_text("A")
+        text_L.set_color(RED).set_weight(BOLD)
+
+        underbrace_di = Brace(simplified_eq[0][2:6], DOWN, buff=0.2)
+        text_di = underbrace_di.get_text("x")
+        text_di.set_color(RED).set_weight(BOLD)
+
+        underbrace_rhs = Brace(simplified_eq[0][8:31], DOWN, buff=0.2)
+        text_rhs = underbrace_rhs.get_text("b")
+        text_rhs.set_color(RED).set_weight(BOLD)
+
+        # Animate
+        self.play(Create(underbrace_L), Write(text_L))
+        self.wait(1)
+        self.play(Create(underbrace_di), Write(text_di))
+        self.wait(1)
+        self.play(Create(underbrace_rhs), Write(text_rhs))
+        self.wait(5)    
+
 
       
 
@@ -305,7 +369,7 @@ class SineWaves120ChgAmp(Scene):
         new_sum_eq = MathTex("y_1 + y_2 + y_3 \\neq 0").move_to(sum_eq)
 
         self.play(Transform(sine1, modified_sine1), Transform(sum_eq, new_sum_eq))
-        self.wait(2)
+        self.wait(4)
 
 
 
