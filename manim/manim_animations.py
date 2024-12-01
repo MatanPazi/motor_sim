@@ -374,8 +374,64 @@ class SineWaves120ChgAmp(Scene):
 
 
 
+class MatrixVectorMultiplication(Scene):
+    def construct(self):
+        # Define the matrix with symbolic variables
+        matrix = MathTex(
+            r"\begin{bmatrix}"
+            r"L_{aa} & L_{ab} & L_{ac} & 1 \\"
+            r"L_{ab} & L_{bb} & L_{bc} & 1 \\"
+            r"L_{ac} & L_{bc} & L_{cc} & 1 \\"
+            r"1 & 1 & 1 & 0"
+            r"\end{bmatrix}"
+        )
+        
+        vector = MathTex(
+            r"\begin{bmatrix}"
+            r"\frac{di_a}{dt} \\ \frac{di_b}{dt} \\ \frac{di_c}{dt} \\ V_n"
+            r"\end{bmatrix}"
+        )
 
+        
+        result = MathTex(
+            r"\begin{bmatrix}"
+            r"V_a - i_a R - \text{bemf}_a - \dot{L}_{aa} i_a - \dot{L}_{ab} i_b - \dot{L}_{ac} i_c \\"
+            r"V_b - i_b R - \text{bemf}_b - \dot{L}_{ab} i_a - \dot{L}_{bb} i_b - \dot{L}_{bc} i_c \\"
+            r"V_c - i_c R - \text{bemf}_c - \dot{L}_{ac} i_a - \dot{L}_{bc} i_b - \dot{L}_{cc} i_c \\"
+            r"0"
+            r"\end{bmatrix}"
+        ) 
 
+        
+        # Equation derived from last row
+        equation = MathTex(
+            r"\frac{di_a}{dt} + \frac{di_b}{dt} + \frac{di_c}{dt} = 0"
+        ).scale(1)
+
+        # Position the matrix, vector, and result
+        matrix.scale(0.85).to_edge(LEFT + UP)
+        multiply = MathTex(" \\times ").scale(0.6).next_to(matrix, RIGHT, buff=0.15)
+        vector.scale(0.85).next_to(multiply, RIGHT, buff=0.15)
+        equals = MathTex("=").scale(0.6).next_to(vector, RIGHT, buff=0.15)
+        result.scale(0.85).next_to(equals, RIGHT, buff=0.15)
+
+        # Animate the setup
+        self.play(Write(matrix), Write(vector), Write(multiply))
+        self.play(Write(equals), Write(result))
+        self.wait(1)
+
+        # Highlight the last row and vector
+        last_row = SurroundingRectangle(matrix[0][-8:-4], color=YELLOW)  # Adjust to match indices for the last row
+        vector_rect = SurroundingRectangle(vector[-1], color=YELLOW)
+        self.play(Create(last_row), Create(vector_rect))
+        self.wait(1)
+
+        # Transform last row and vector into the equation
+        self.play(
+            TransformFromCopy(matrix[0][-8:-4], equation[0][:7]),  # Transform last row coefficients
+            TransformFromCopy(vector[0], equation[0][8:]),      # Transform vector elements
+        )        
+        self.wait(2)
 
 
 
@@ -389,7 +445,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    ElectricalModel().render()
+    MatrixVectorMultiplication().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
