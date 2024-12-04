@@ -434,6 +434,111 @@ class MatrixVectorMultiplication(Scene):
         self.wait(2)
 
 
+class VectorProjections(Scene):
+    def construct(self):
+        # Axes setup
+        axes = Axes(
+            x_range=[-2, 2, 0.5],
+            y_range=[-2, 2, 0.5],
+            axis_config={"color": GREY},
+        )
+        d_label = axes.get_x_axis_label("d", direction=RIGHT)
+        q_label = axes.get_y_axis_label("q", direction=UP)
+
+        # Labels for axes
+        self.play(Create(axes), Write(d_label), Write(q_label))
+
+        # Vector Is
+        magnitude = 1.5
+        is_vector = Arrow(
+            start=axes.c2p(0, 0),
+            end=axes.c2p(magnitude * np.cos(PI / 6), magnitude * np.sin(PI / 6)),
+            color=WHITE
+        )
+        is_label = MathTex("I_s").next_to(is_vector.get_end(), UP + RIGHT, buff=0.1)
+        # Update the label position with the vector
+        def update_label(label):
+            label.next_to(is_vector.get_end(), UP + RIGHT, buff=0.1)
+
+        # Add the updater for the label
+        is_label.add_updater(update_label)        
+
+        # Projections
+        # Correct projection for Id (on x-axis)
+        id_line = always_redraw(lambda: DashedLine(
+            start=axes.c2p(axes.p2c(is_vector.get_end())[0], 0),
+            end=axes.c2p(axes.p2c(is_vector.get_end())[0], axes.p2c(is_vector.get_end())[1]),
+            color=BLUE
+        ))
+        id_label = always_redraw(lambda: MathTex("I_d", color=BLUE).next_to(id_line, DOWN, buff=0.2))
+
+        # Correct projection for Iq (on y-axis)
+        iq_line = always_redraw(lambda: DashedLine(
+            start=axes.c2p(0, axes.p2c(is_vector.get_end())[1]),
+            end=axes.c2p(axes.p2c(is_vector.get_end())[0], axes.p2c(is_vector.get_end())[1]),
+            color=RED,
+        ))
+        iq_label = always_redraw(lambda: MathTex("I_q", color=RED).next_to(iq_line, LEFT, buff=0.2))
+
+        # Animate Is moving between 30 and 60 degrees
+        current_angle = ValueTracker(30 * DEGREES)
+
+        def update_vector(vector):
+            angle = current_angle.get_value()
+            vector.put_start_and_end_on(
+                axes.c2p(0, 0),
+                axes.c2p(magnitude * np.cos(angle), magnitude * np.sin(angle))
+            )
+
+        is_vector.add_updater(update_vector)
+
+        # Create arrows for Id and Iq
+        id_vector = Arrow(
+            start=axes.c2p(0, 0),
+            end=axes.c2p(magnitude * np.cos(PI / 6), 0),
+            color=BLUE,
+            stroke_width=4  # Keep arrow width constant
+        )
+        iq_vector = Arrow(
+            start=axes.c2p(0, 0),
+            end=axes.c2p(0.01, magnitude * np.sin(PI / 6)),
+            color=RED,
+            max_tip_length_to_length_ratio = 5
+        )        
+
+        def update_vector_id(vector):
+            angle = current_angle.get_value()
+            vector.put_start_and_end_on(
+                axes.c2p(0, 0),
+                axes.c2p(magnitude * np.cos(angle), 0)
+            )
+        def update_vector_iq(vector):
+            angle = current_angle.get_value()
+            vector.put_start_and_end_on(
+                axes.c2p(0, 0),
+                axes.c2p(0.01, magnitude * np.sin(angle))
+            )            
+
+        id_vector.add_updater(update_vector_id)
+        iq_vector.add_updater(update_vector_iq)      
+
+        # Update Is and projections
+        self.play(Create(is_vector), Write(is_label), Create(id_line), Write(id_label), Create(iq_line), Write(iq_label), Create(id_vector), Create(iq_vector))
+
+        # Animate the angle oscillating between 30 and 60 degrees
+        self.play(current_angle.animate.set_value(60 * DEGREES), run_time=6, rate_func=there_and_back)
+
+        self.add(is_vector)
+        self.add(id_vector)
+        self.add(iq_vector)
+        self.wait(2)  # Let the vector move for 4 seconds
+
+        # Stop the animation and hold the final scene
+        is_vector.remove_updater(update_vector)
+        id_vector.remove_updater(update_vector_id)
+        iq_vector.remove_updater(update_vector_iq)
+        self.wait()
+
 
 
 
