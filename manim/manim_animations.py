@@ -1,8 +1,7 @@
 import os
 import platform
 from manim import *
-
-from manim import *
+import numpy as np
 
 class SineWaveWithImpedance(Scene):
     def construct(self):
@@ -539,6 +538,116 @@ class VectorProjections(Scene):
         iq_vector.remove_updater(update_vector_iq)
         self.wait()
 
+
+
+
+class ThreePhaseSineWaves(Scene):
+    def construct(self):
+        # Set up the axes
+        axes = Axes(
+            x_range=[0, 6*np.pi, np.pi/2],
+            y_range=[-2.5, 2.5, 0.5],
+            axis_config={"color": BLUE},
+            x_length=10.0
+        )
+        axes_labels = axes.get_axis_labels(x_label="t", y_label="V")
+
+        # Define the sine waves
+        def sine_wave(x, phase=0):
+            return np.sin(x + phase)
+
+        # Create the initial three sine waves
+        graph1 = axes.plot(lambda x: sine_wave(x), color=RED)
+        graph2 = axes.plot(lambda x: sine_wave(x, 2*np.pi/3), color=GREEN)
+        graph3 = axes.plot(lambda x: sine_wave(x, 4*np.pi/3), color=BLUE)
+
+        # Show the initial setup
+        self.play(Create(axes), Create(axes_labels))
+        self.play(Create(graph1), Create(graph2), Create(graph3))
+        self.wait(1)
+
+        # Add crossed line and label for phase voltages
+        start_point_1 = axes.c2p(0, 1)
+        end_point_1 = axes.c2p(6*np.pi, 1)
+        dashed_line_1 = DashedLine(start_point_1, end_point_1, color=WHITE)
+        label_1 = MathTex("\\frac{V_{bus}}{2}").next_to(start_point_1, LEFT).scale(0.6)
+
+        # Add crossed line and label for phase voltages
+        start_point_2 = axes.c2p(0, 2)
+        end_point_2 = axes.c2p(6*np.pi, 2)
+        dashed_line_2 = DashedLine(start_point_2, end_point_2, color=WHITE)
+        label_2 = MathTex("V_{bus}").next_to(start_point_2, np.array((-1.0, 0.1, 0.0))).scale(0.6)
+
+        self.play(Create(dashed_line_1), Write(label_1), Create(dashed_line_2), Write(label_2))        
+        self.wait(1)
+
+        # Remove one sine wave and add the difference function
+        self.play(FadeOut(graph3))
+        diff_graph = axes.plot(lambda x: sine_wave(x) - sine_wave(x, 2*np.pi/3), color=YELLOW)
+
+        # Add crossed line and label for phase voltages
+        start_point_3 = axes.c2p(0, 1.732)
+        end_point_3 = axes.c2p(6*np.pi, 1.732)
+        dashed_line_3 = DashedLine(start_point_3, end_point_3, color=WHITE)
+        label_3 = MathTex("\\frac{V_{bus}}{1.154}").next_to(start_point_3, LEFT).scale(0.6)
+
+        self.play(Create(diff_graph), Create(dashed_line_3), Write(label_3))
+        self.wait(4)    
+
+        # Increase amplitude of original sine waves
+        def increased_sine_wave(x, phase=0):
+            return (2/np.sqrt(3)) * np.sin(x + phase)
+
+        new_graph1 = axes.plot(lambda x: increased_sine_wave(x), color=RED)
+        new_graph2 = axes.plot(lambda x: increased_sine_wave(x, 2*np.pi/3), color=GREEN)
+        new_diff_graph = axes.plot(lambda x: increased_sine_wave(x) - increased_sine_wave(x, 2*np.pi/3), color=YELLOW)
+
+        self.play(
+            ReplacementTransform(graph1, new_graph1),
+            ReplacementTransform(graph2, new_graph2),
+            ReplacementTransform(diff_graph, new_diff_graph)
+        )
+        self.wait(4)    
+
+        # Add third harmonic
+        def harmonic_sine_wave(x, phase=0):
+            return (2/np.sqrt(3)) * (np.sin(x + phase) + (1/6) * np.sin(3*(x + phase)))
+
+        harmonic = axes.plot(lambda x: sine_wave(3*x) * 1.154 / 6, color=PURPLE)
+        harmonic_graph1 = axes.plot(lambda x: harmonic_sine_wave(x), color=RED)
+        harmonic_graph2 = axes.plot(lambda x: harmonic_sine_wave(x, 2*np.pi/3), color=GREEN)
+        harmonic_diff_graph = axes.plot(lambda x: harmonic_sine_wave(x) - harmonic_sine_wave(x, 2*np.pi/3), color=YELLOW)
+
+        # Add crossed line and label for phase voltages
+        start_point_4 = axes.c2p(0, 1.154/6)
+        end_point_4 = axes.c2p(6*np.pi, 1.154/6)
+        dashed_line_4 = DashedLine(start_point_4, end_point_4, color=WHITE)
+        label_4 = MathTex("\\frac{1.154 * V_{bus}}{6}").next_to(start_point_4, np.array((-0.01, 0.0, 0.0))).scale(0.6)        
+
+        self.play(Create(harmonic))
+        self.wait(1)
+        self.play(Create(dashed_line_4), Write(label_4))
+        self.wait(2)
+
+        self.play(
+            ReplacementTransform(new_graph1, harmonic_graph1),
+            ReplacementTransform(new_graph2, harmonic_graph2),
+            ReplacementTransform(new_diff_graph, harmonic_diff_graph),
+        )
+        self.wait(4)
+
+        harmonic_new = axes.plot(lambda x: 1.2*sine_wave(3*x) * 1.154 / 6, color=PURPLE)
+        harmonic_graph1_new = axes.plot(lambda x: 1.2*harmonic_sine_wave(x), color=RED)
+        harmonic_graph2_new = axes.plot(lambda x: 1.2*harmonic_sine_wave(x, 2*np.pi/3), color=GREEN)
+        harmonic_diff_graph_new = axes.plot(lambda x: 1.2*harmonic_sine_wave(x) - 1.2*harmonic_sine_wave(x, 2*np.pi/3), color=YELLOW)
+
+        self.play(
+            ReplacementTransform(harmonic_graph1, harmonic_graph1_new),
+            ReplacementTransform(harmonic_graph2, harmonic_graph2_new),
+            ReplacementTransform(harmonic_diff_graph, harmonic_diff_graph_new),
+            ReplacementTransform(harmonic, harmonic_new),
+        )
+        self.wait(4)
 
 
 
