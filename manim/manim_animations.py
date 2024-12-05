@@ -706,7 +706,7 @@ class CenterAlignedPWM(Scene):
         self.wait(2)
 
 
-
+ 
 
 if __name__ == "__main__":
     from manim import config
