@@ -651,6 +651,63 @@ class ThreePhaseSineWaves(Scene):
 
 
 
+class CenterAlignedPWM(Scene):
+    def construct(self):
+        # Create axes
+        axes = Axes(
+            x_range=[0, 250, 50],
+            y_range=[0, 125, 25],
+            axis_config={"color": BLUE},
+            x_axis_config={"numbers_to_include": range(0, 201, 50)},
+            y_axis_config={"numbers_to_include": range(0, 101, 25)},
+        ).scale(0.65).to_edge(UP, buff=1.0)
+        
+        # Add labels
+        x_label = axes.get_x_axis_label("Time", direction=RIGHT)
+        y_label = axes.get_y_axis_label("Counter", direction=2*UP)
+        
+        # Create timer
+        timer = Integer(0).to_corner(UR, buff=2.0)
+        timer_label = Text("Timer :").next_to(timer, LEFT)
+        timer_group = VGroup(timer_label, timer)
+        
+        # Create triangular waveform
+        triangle_points = [
+            axes.c2p(0, 0),
+            axes.c2p(100, 100),
+            axes.c2p(200, 0)
+        ]
+        triangle = VMobject(color=RED)
+        triangle.set_points_as_corners(triangle_points)
+        
+        # Create vertical lines and label for PWM period
+        start_line = axes.get_vertical_line(axes.c2p(0, -30), color=GREEN, stroke_width=8)
+        end_line = axes.get_vertical_line(axes.c2p(200, -30), color=GREEN, stroke_width=8)
+        period_arrow = DoubleArrow(start=start_line.get_bottom(), end=end_line.get_bottom(), buff=0.1, color=YELLOW)
+        period_label = Text("PWM Period", color=YELLOW).next_to(period_arrow, DOWN)
+        pwm_group = VGroup(start_line, end_line, period_arrow, period_label)
+        
+        # Add elements to the scene
+        self.add(axes, x_label, y_label, timer_group)
+        
+        # Animate the waveform and timer
+        self.play(
+            Create(triangle),
+            UpdateFromAlphaFunc(timer, lambda m, alpha: m.set_value(alpha * 200)),
+            run_time=10,
+            rate_func=linear
+        )
+        
+        # Add PWM period indication after triangle is complete
+        self.play(
+            Create(pwm_group)
+        )
+        
+        self.wait(2)
+
+
+
+
 if __name__ == "__main__":
     from manim import config
 
@@ -659,7 +716,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    MatrixVectorMultiplication().render()
+    CenterAlignedPWM().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
