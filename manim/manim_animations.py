@@ -733,15 +733,17 @@ class CenterAlignedPWM(Scene):
             run_time=1.5
         )
 
+        self.wait(2)
+        
         # Create transistor state texts
-        top_text = Text("Top Transistors: ", color=BLUE).scale(0.7)
-        bottom_text = Text("Bottom Transistors: ", color=RED).scale(0.7)
-        top_state = Text("OFF", color=BLUE).scale(0.7)
-        bottom_state = Text("OFF", color=RED).scale(0.7)
+        top_text = Text("Top Transistors: ", color=BLUE).scale(0.6)
+        bottom_text = Text("Bottom Transistors: ", color=RED).scale(0.6)
+        top_state = Text("OFF", color=BLUE).scale(0.6)
+        bottom_state = Text("OFF", color=RED).scale(0.6)
 
         # Position the texts
         text_group = VGroup(top_text, bottom_text).arrange(DOWN, aligned_edge=LEFT)
-        text_group.to_corner(UR, buff=1.5)
+        text_group.to_corner(UR, buff=1.4)
         top_state.next_to(top_text, RIGHT)
         bottom_state.next_to(bottom_text, RIGHT)
 
@@ -763,22 +765,71 @@ class CenterAlignedPWM(Scene):
             x = 20 + alpha * 180
             y = 100 - abs(x - 100)
             if y > 50:
-                top_state.become(Text("ON", color=BLUE).scale(0.8).next_to(top_text, RIGHT))
-                bottom_state.become(Text("OFF", color=RED).scale(0.8).next_to(bottom_text, RIGHT))
+                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
             else:
-                top_state.become(Text("OFF", color=BLUE).scale(0.8).next_to(top_text, RIGHT))
-                bottom_state.become(Text("ON", color=RED).scale(0.8).next_to(bottom_text, RIGHT))
+                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
 
         # Animate point moving along triangle, update timer and transistor states
         self.play(
             UpdateFromAlphaFunc(point, update_point),
             UpdateFromAlphaFunc(timer, update_timer),
             UpdateFromAlphaFunc(VGroup(), lambda m, alpha: update_states(alpha)),
-            run_time=5,
+            run_time=10,
             rate_func=linear
         )
 
         self.wait(2)
+
+
+        # Add two new dashed horizontal lines
+        lower_dashed_line = DashedLine(
+            start=axes.c2p(0, 45),
+            end=axes.c2p(200, 45),
+            color=GREEN_A,
+            dash_length=0.1
+        )
+        upper_dashed_line = DashedLine(
+            start=axes.c2p(0, 55),
+            end=axes.c2p(200, 55),
+            color=GREEN_A,
+            dash_length=0.1
+        )
+
+        # Function to update transistor states with new logic
+        def update_states(alpha):
+            x = 20 + alpha * 180
+            y = 100 - abs(x - 100)
+            if y > 55:
+                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+            else:
+                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+            
+            if y < 45:
+                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+            else:
+                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+
+
+        # After the main animation, add new lines and reset point
+        self.play(
+            Create(lower_dashed_line),
+            Create(upper_dashed_line),
+            point.animate.move_to(axes.c2p(20, 20)),
+            run_time=1.5
+        )
+
+        # Animate point moving along triangle with new state logic
+        self.play(
+            UpdateFromAlphaFunc(point, update_point),
+            UpdateFromAlphaFunc(timer, update_timer),
+            UpdateFromAlphaFunc(VGroup(), lambda m, alpha: update_states(alpha)),
+            run_time=10,
+            rate_func=linear
+        )
+
+        self.wait(2)        
 
 
  
