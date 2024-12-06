@@ -705,6 +705,81 @@ class CenterAlignedPWM(Scene):
         
         self.wait(2)
 
+        self.play(FadeOut(pwm_group))
+
+        # Add dashed horizontal line at y = 50
+        dashed_line = DashedLine(
+            start=axes.c2p(0, 50),
+            end=axes.c2p(200, 50),
+            color=GREEN,
+            dash_length=0.1
+        )
+
+        # Add point on x-axis at x = 20
+        point = Dot(axes.c2p(20, 0), color=YELLOW)
+
+        # Add elements to the scene
+        self.play(Create(dashed_line))
+
+        # Show the point
+        self.play(Create(point))
+        self.wait(1)
+
+        # Move point upwards to connect with triangle and move timer below the plot
+        self.play(
+            point.animate.move_to(axes.c2p(20, 20)),
+            timer.animate.set_value(20),
+            timer_group.animate.next_to(axes, DOWN, buff=0.5),
+            run_time=1.5
+        )
+
+        # Create transistor state texts
+        top_text = Text("Top Transistors: ", color=BLUE).scale(0.7)
+        bottom_text = Text("Bottom Transistors: ", color=RED).scale(0.7)
+        top_state = Text("OFF", color=BLUE).scale(0.7)
+        bottom_state = Text("OFF", color=RED).scale(0.7)
+
+        # Position the texts
+        text_group = VGroup(top_text, bottom_text).arrange(DOWN, aligned_edge=LEFT)
+        text_group.to_corner(UR, buff=1.5)
+        top_state.next_to(top_text, RIGHT)
+        bottom_state.next_to(bottom_text, RIGHT)
+
+        self.add(text_group, top_state, bottom_state)
+
+        # Function to update point position
+        def update_point(mob, alpha):
+            x = 20 + alpha * 180  # x moves from 20 to 200
+            y = 100 - abs(x - 100)  # y follows triangle
+            mob.move_to(axes.c2p(x, y))
+
+        # Function to update timer
+        def update_timer(mob, alpha):
+            new_value = int(20 + alpha * 180)  # Increment from 20 to 200
+            mob.set_value(new_value)
+
+        # Function to update transistor states
+        def update_states(alpha):
+            x = 20 + alpha * 180
+            y = 100 - abs(x - 100)
+            if y > 50:
+                top_state.become(Text("ON", color=BLUE).scale(0.8).next_to(top_text, RIGHT))
+                bottom_state.become(Text("OFF", color=RED).scale(0.8).next_to(bottom_text, RIGHT))
+            else:
+                top_state.become(Text("OFF", color=BLUE).scale(0.8).next_to(top_text, RIGHT))
+                bottom_state.become(Text("ON", color=RED).scale(0.8).next_to(bottom_text, RIGHT))
+
+        # Animate point moving along triangle, update timer and transistor states
+        self.play(
+            UpdateFromAlphaFunc(point, update_point),
+            UpdateFromAlphaFunc(timer, update_timer),
+            UpdateFromAlphaFunc(VGroup(), lambda m, alpha: update_states(alpha)),
+            run_time=5,
+            rate_func=linear
+        )
+
+        self.wait(2)
+
 
  
 
