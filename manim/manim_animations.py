@@ -681,8 +681,8 @@ class CenterAlignedPWM(Scene):
         triangle.set_points_as_corners(triangle_points)
         
         # Create vertical lines and label for PWM period
-        start_line = axes.get_vertical_line(axes.c2p(0, -30), color=GREEN, stroke_width=8)
-        end_line = axes.get_vertical_line(axes.c2p(200, -30), color=GREEN, stroke_width=8)
+        start_line = axes.get_vertical_line(axes.c2p(0, -30), color=YELLOW, stroke_width=8)
+        end_line = axes.get_vertical_line(axes.c2p(200, -30), color=YELLOW, stroke_width=8)
         period_arrow = DoubleArrow(start=start_line.get_bottom(), end=end_line.get_bottom(), buff=0.1, color=YELLOW)
         period_label = Text("PWM Period", color=YELLOW).next_to(period_arrow, DOWN)
         pwm_group = VGroup(start_line, end_line, period_arrow, period_label)
