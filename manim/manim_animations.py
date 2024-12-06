@@ -689,6 +689,7 @@ class CenterAlignedPWM(Scene):
         
         # Add elements to the scene
         self.add(axes, x_label, y_label, timer_group)
+        self.wait(2)
         
         # Animate the waveform and timer
         self.play(
@@ -715,6 +716,19 @@ class CenterAlignedPWM(Scene):
             dash_length=0.1
         )
 
+        # Create transistor state texts
+        top_text = Text("Top Transistors: ", color=BLUE).scale(0.5)
+        bottom_text = Text("Bottom Transistors: ", color=RED).scale(0.5)
+        top_state = Text("OFF", weight=BOLD, color=BLUE).scale(0.5)
+        bottom_state = Text("ON", weight=BOLD, color=RED).scale(0.5)
+
+        # Position the texts inside the triangular waveform
+        top_group = VGroup(top_text, top_state).arrange(RIGHT)
+        bottom_group = VGroup(bottom_text, bottom_state).arrange(RIGHT)
+        
+        top_group.move_to(axes.c2p(100, 30))  # Adjust these coordinates as needed
+        bottom_group.next_to(top_group, DOWN, buff=0.2, aligned_edge=LEFT)  # Adjust these coordinates as needed
+
         # Add point on x-axis at x = 20
         point = Dot(axes.c2p(20, 0), color=YELLOW)
 
@@ -730,24 +744,12 @@ class CenterAlignedPWM(Scene):
             point.animate.move_to(axes.c2p(20, 20)),
             timer.animate.set_value(20),
             timer_group.animate.next_to(axes, DOWN, buff=0.5),
+            FadeIn(top_group),
+            FadeIn(bottom_group),         
             run_time=1.5
         )
 
-        self.wait(2)
-        
-        # Create transistor state texts
-        top_text = Text("Top Transistors: ", color=BLUE).scale(0.6)
-        bottom_text = Text("Bottom Transistors: ", color=RED).scale(0.6)
-        top_state = Text("OFF", color=BLUE).scale(0.6)
-        bottom_state = Text("OFF", color=RED).scale(0.6)
-
-        # Position the texts
-        text_group = VGroup(top_text, bottom_text).arrange(DOWN, aligned_edge=LEFT)
-        text_group.to_corner(UR, buff=1.4)
-        top_state.next_to(top_text, RIGHT)
-        bottom_state.next_to(bottom_text, RIGHT)
-
-        self.add(text_group, top_state, bottom_state)
+        self.wait(2)    
 
         # Function to update point position
         def update_point(mob, alpha):
@@ -765,11 +767,11 @@ class CenterAlignedPWM(Scene):
             x = 20 + alpha * 180
             y = 100 - abs(x - 100)
             if y > 50:
-                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
-                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.5).next_to(top_text, RIGHT))
+                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.5).next_to(bottom_text, RIGHT))
             else:
-                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
-                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.5).next_to(top_text, RIGHT))
+                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.5).next_to(bottom_text, RIGHT))       
 
         # Animate point moving along triangle, update timer and transistor states
         self.play(
@@ -802,14 +804,14 @@ class CenterAlignedPWM(Scene):
             x = 20 + alpha * 180
             y = 100 - abs(x - 100)
             if y > 55:
-                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+                top_state.become(Text("ON", weight=BOLD, color=BLUE).scale(0.5).next_to(top_text, RIGHT))
             else:
-                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.6).next_to(top_text, RIGHT))
+                top_state.become(Text("OFF", weight=BOLD, color=BLUE).scale(0.5).next_to(top_text, RIGHT))
             
             if y < 45:
-                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+                bottom_state.become(Text("ON", weight=BOLD, color=RED).scale(0.5).next_to(bottom_text, RIGHT))
             else:
-                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.6).next_to(bottom_text, RIGHT))
+                bottom_state.become(Text("OFF", weight=BOLD, color=RED).scale(0.5).next_to(bottom_text, RIGHT))
 
 
         # After the main animation, add new lines and reset point
