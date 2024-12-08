@@ -834,7 +834,162 @@ class CenterAlignedPWM(Scene):
         self.wait(2)        
 
 
- 
+
+
+class InductanceEquations(Scene):
+    def construct(self):
+        # Define constants
+        Lq, Ld = 1.4, 0.8
+
+        # First set of equations
+        self.first_set(Lq, Ld)
+        
+        # Fade out everything
+        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        
+        # Second set of equations
+        self.second_set(Lq, Ld)
+
+    def first_set(self, Lq, Ld):
+        # Create equations with colors
+        eq1 = MathTex(r"L_{aa} = L_q \cos^2(\theta) + L_d \sin^2(\theta)", color=RED)
+        eq2 = MathTex(r"L_{bb} = L_q \cos^2(\theta - \frac{2\pi}{3}) + L_d \sin^2(\theta - \frac{2\pi}{3})", color=GREEN)
+        eq3 = MathTex(r"L_{cc} = L_q \cos^2(\theta + \frac{2\pi}{3}) + L_d \sin^2(\theta + \frac{2\pi}{3})", color=BLUE)
+
+        equations = VGroup(eq1, eq2, eq3).arrange(DOWN, buff=0.3, aligned_edge=LEFT)
+
+        # Show equations in the middle
+        self.play(Write(equations))
+        self.wait(2)
+
+        # Make equations smaller and move to top
+        self.play(
+            equations.animate.scale(0.4).to_corner(UP, buff=0.5)
+        )
+        self.wait(1)
+
+        # Create the plot
+        axes = Axes(
+            x_range=[0, 2*PI, PI/2],
+            y_range=[0, 1.5, 0.5],
+            axis_config={"include_tip": False},
+            x_axis_config={"label_direction": DOWN},
+            y_axis_config={"label_direction": LEFT},
+            tips=False,
+        )
+
+        x_label = axes.get_x_axis_label(r"\theta").scale(0.7)
+        y_label = axes.get_y_axis_label("L").scale(0.7)
+
+        plot = VGroup(axes, x_label, y_label).scale(0.8).shift(DOWN * 0.5)
+
+        self.play(Create(plot))
+
+        # Define the functions
+        def Laa(x): return Lq * np.cos(x)**2 + Ld * np.sin(x)**2
+        def Lbb(x): return Lq * np.cos(x - 2*np.pi/3)**2 + Ld * np.sin(x - 2*np.pi/3)**2
+        def Lcc(x): return Lq * np.cos(x + 2*np.pi/3)**2 + Ld * np.sin(x + 2*np.pi/3)**2
+
+        # Create the graphs
+        graph_aa = axes.plot(Laa, color=RED)
+        graph_bb = axes.plot(Lbb, color=GREEN)
+        graph_cc = axes.plot(Lcc, color=BLUE)
+
+        # Add labels to the graphs
+        label_aa = Text("Laa", color=RED, font_size=24).next_to(graph_aa.points[-1], UR)
+        label_bb = Text("Lbb", color=GREEN, font_size=24).next_to(graph_bb.points[-1], DR)
+        label_cc = Text("Lcc", color=BLUE, font_size=24).next_to(graph_cc.points[-1], UR)
+
+        self.play(Create(graph_aa), Create(graph_bb), Create(graph_cc))
+        self.play(Write(label_aa), Write(label_bb), Write(label_cc))
+
+        # Add horizontal lines for Lq and Ld
+        line_Lq = DashedLine(
+            axes.c2p(0, Lq), axes.c2p(2*PI, Lq), 
+            color=YELLOW, dash_length=0.1
+        )
+        line_Ld = DashedLine(
+            axes.c2p(0, Ld), axes.c2p(2*PI, Ld), 
+            color=YELLOW, dash_length=0.1
+        )
+        Lq_label = Text("Lq", color=YELLOW, font_size=24).next_to(line_Lq, LEFT)
+        Ld_label = Text("Ld", color=YELLOW, font_size=24).next_to(line_Ld, LEFT)
+
+        self.play(Create(line_Lq), Create(line_Ld), Write(Lq_label), Write(Ld_label))
+
+        self.wait(3)
+
+    def second_set(self, Lq, Ld):
+        # Create new equations with colors
+        eq1 = MathTex(r"L_{ab} = L_q \cos(\theta) \cos(\theta - \frac{2\pi}{3}) + L_d \sin(\theta) \sin(\theta - \frac{2\pi}{3})", color=RED)
+        eq2 = MathTex(r"L_{ac} = L_q \cos(\theta) \cos(\theta + \frac{2\pi}{3}) + L_d \sin(\theta) \sin(\theta + \frac{2\pi}{3})", color=GREEN)
+        eq3 = MathTex(r"L_{bc} = L_q \cos(\theta - \frac{2\pi}{3}) \cos(\theta + \frac{2\pi}{3}) + L_d \sin(\theta - \frac{2\pi}{3}) \sin(\theta + \frac{2\pi}{3})", color=BLUE)
+
+        equations = VGroup(eq1, eq2, eq3).arrange(DOWN, buff=0.3, aligned_edge=LEFT)
+
+        # Show equations in the middle
+        self.play(Write(equations))
+        self.wait(2)
+
+        # Make equations smaller and move to top
+        self.play(
+            equations.animate.scale(0.4).to_corner(UP, buff=0.5)
+        )
+        self.wait(1)
+
+        # Create the plot
+        axes = Axes(
+            x_range=[0, 2*PI, PI/2],
+            y_range=[-1.0, 0.0, 0.5],
+            axis_config={"include_tip": False},
+            x_axis_config={"label_direction": DOWN},
+            y_axis_config={"label_direction": LEFT},
+            tips=False,
+        ).scale(0.9)
+
+        x_label = axes.get_x_axis_label(r"\theta").scale(0.7)
+        y_label = axes.get_y_axis_label("L").scale(0.7)
+
+        plot = VGroup(axes, x_label, y_label).scale(0.8).shift(DOWN * 0.5)
+
+        self.play(Create(plot))
+
+        # Define the new functions
+        def Lab(x): return Lq * np.cos(x) * np.cos(x - 2*np.pi/3) + Ld * np.sin(x) * np.sin(x - 2*np.pi/3)
+        def Lac(x): return Lq * np.cos(x) * np.cos(x + 2*np.pi/3) + Ld * np.sin(x) * np.sin(x + 2*np.pi/3)
+        def Lbc(x): return Lq * np.cos(x - 2*np.pi/3) * np.cos(x + 2*np.pi/3) + Ld * np.sin(x - 2*np.pi/3) * np.sin(x + 2*np.pi/3)
+
+        # Create the graphs
+        graph_ab = axes.plot(Lab, color=RED)
+        graph_ac = axes.plot(Lac, color=GREEN)
+        graph_bc = axes.plot(Lbc, color=BLUE)
+
+        # Add labels to the graphs
+        label_ab = Text("Lab", color=RED, font_size=24).next_to(graph_ab.points[-1], UR)
+        label_ac = Text("Lac", color=GREEN, font_size=24).next_to(graph_ac.points[-1], DR)
+        label_bc = Text("Lbc", color=BLUE, font_size=24).next_to(graph_bc.points[-1], UR)
+
+        self.play(Create(graph_ab), Create(graph_ac), Create(graph_bc))
+        self.play(Write(label_ab), Write(label_ac), Write(label_bc))
+
+        line_Lq = DashedLine(
+            axes.c2p(0, -0.25), axes.c2p(2 * PI, -0.25), 
+            color=YELLOW, dash_length=0.1
+        )
+
+        line_Ld = DashedLine(
+            axes.c2p(0, -0.85), axes.c2p(2 * PI, -0.85), 
+            color=YELLOW, dash_length=0.1
+        )
+        Lq_label = Text("Min", color=YELLOW, font_size=24).next_to(line_Lq, LEFT)
+        Ld_label = Text("Max", color=YELLOW, font_size=24).next_to(line_Ld, LEFT)
+
+        self.play(Create(line_Lq), Create(line_Ld), Write(Lq_label), Write(Ld_label))
+
+        self.wait(3)
+
+
+
 
 if __name__ == "__main__":
     from manim import config
@@ -844,7 +999,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    CenterAlignedPWM().render()
+    InductanceEquations().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
