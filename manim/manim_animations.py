@@ -991,6 +991,31 @@ class InductanceEquations(Scene):
 
 
 
+class EquationsScene(Scene):
+    def construct(self):
+        # Define the equations
+        eq1 = MathTex(r"L_{aa}' = -(L_q - L_d) \sin(2\theta) \omega", color=GREEN)
+        eq2 = MathTex(r"L_{bb}' = -(L_q - L_d) \cos(2\theta + \frac{\pi}{6}) \omega", color=GREEN)
+        eq3 = MathTex(r"L_{cc}' = (L_q - L_d) \sin(2(\theta + \frac{\pi}{6})) \omega", color=GREEN)
+        eq4 = MathTex(r"L_{ab}' = (L_q - L_d) \cos(\frac{\pi}{6} - 2\theta) \omega", color=PINK)
+        eq5 = MathTex(r"L_{ac}' = -(L_q - L_d) \cos(2\theta + \frac{\pi}{6}) \omega", color=PINK)
+        eq6 = MathTex(r"L_{bc}' = -(L_q - L_d) \sin(2\theta) \omega", color=PINK)
+
+        # Arrange equations in a column
+        equationsSelf = VGroup(eq1, eq2, eq3).arrange(DOWN, buff=0.2, aligned_edge=LEFT)
+        equationsSelf.move_to(2*UP)
+
+        equationsMutual = VGroup(eq4, eq5, eq6).arrange(DOWN, buff=0.2, aligned_edge=LEFT).next_to(equationsSelf, DOWN, buff=0.2)
+        
+        # Animate the appearance of equations
+        self.play(Write(equationsSelf), run_time=1)
+        self.wait(2)
+        self.play(Write(equationsMutual), run_time=1)
+        self.wait(3)
+
+
+
+
 if __name__ == "__main__":
     from manim import config
 
@@ -999,7 +1024,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    InductanceEquations().render()
+    EquationsScene().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
