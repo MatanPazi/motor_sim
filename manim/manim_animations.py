@@ -1160,6 +1160,77 @@ class SineWaveFrequencyAmplitude(Scene):
 
 
 
+
+
+class VoltageCurrentTransferFunction(Scene):
+    def construct(self):
+        # Transfer function
+        transfer_function = MathTex(r"\frac{I}{V} = \frac{1}{Ls + R}")
+        transfer_function.to_edge(UP)
+        self.play(Write(transfer_function))
+        
+        # Inject signals text
+        inject_text = Text("Inject signals in D and Q axes")
+        inject_text.next_to(transfer_function, DOWN)
+        self.play(FadeIn(inject_text))
+        self.wait(1)
+        self.play(FadeOut(inject_text))
+        
+        # Step response
+        axes_step = Axes(
+            x_range=[0, 5, 1],
+            y_range=[0, 1.2, 0.2],
+            axis_config={"color": BLUE},
+            x_length=4,
+            y_length=3
+        )
+        axes_step.to_edge(LEFT, buff=1.5).shift(DOWN)
+
+        # Create a perfect step function using Line
+        step_voltage = VGroup(
+            Line(axes_step.c2p(0, 0), axes_step.c2p(0.5, 0), color=RED),
+            Line(axes_step.c2p(0.5, 0), axes_step.c2p(0.5, 1), color=RED),
+            Line(axes_step.c2p(0.5, 1), axes_step.c2p(5, 1), color=RED)
+        )
+
+        step_current = axes_step.plot(lambda x: 1 - np.exp(-(x-0.5)) if x >= 0.5 else 0, color=GREEN)
+
+        step_label = Text("Step Response", font_size=24).next_to(axes_step, UP)
+        step_voltage_label = Text("Voltage", color=RED, font_size=20).next_to(axes_step, LEFT)
+        step_current_label = Text("Current", color=GREEN, font_size=20).next_to(step_voltage_label, DOWN)
+
+        self.play(Create(axes_step), Write(step_label))
+        self.play(Create(step_voltage))
+        self.play(Create(step_current))
+        self.play(Write(step_voltage_label), Write(step_current_label))
+        
+        # Sine wave response
+        axes_sine = Axes(
+            x_range=[0, 6*np.pi, np.pi/2],
+            y_range=[-1.2, 1.2, 0.4],
+            axis_config={"color": BLUE},
+            x_length=4,
+            y_length=3
+        )
+        axes_sine.to_edge(RIGHT, buff=1.5).shift(DOWN)
+        
+        sine_voltage = axes_sine.plot(lambda x: np.sin(x), color=RED)
+        sine_current = axes_sine.plot(lambda x: 0.8*np.sin(x - np.pi/3), color=GREEN)
+        
+        sine_label = Text("Sine Response", font_size=24).next_to(axes_sine, UP)
+        sine_voltage_label = Text("Voltage", color=RED, font_size=20).next_to(axes_sine, LEFT)
+        sine_current_label = Text("Current", color=GREEN, font_size=20).next_to(sine_voltage_label, DOWN)
+        
+        self.play(Create(axes_sine), Write(sine_label))
+        self.play(Create(sine_voltage), Create(sine_current))
+        self.play(Write(sine_voltage_label), Write(sine_current_label))
+        
+        self.wait(2)
+
+
+
+
+
 if __name__ == "__main__":
     from manim import config
 
@@ -1168,7 +1239,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    SineWaveFrequencyAmplitude().render()
+    VoltageCurrentTransferFunction().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
