@@ -1015,6 +1015,150 @@ class EquationsScene(Scene):
 
 
 
+class SineWaveWithHarmonics(Scene):
+    def construct(self):
+        # Create axes without numbers
+        axes = Axes(
+            x_range=[0, 6*np.pi, np.pi/2],
+            y_range=[-1.5, 1.5, 0.5],
+            axis_config={"color": BLUE, "include_numbers": False},
+            tips=False
+        )
+
+        # Add labels
+        x_label = axes.get_x_axis_label("Angle [rad]")
+        y_label = axes.get_y_axis_label("Bemf [V/rad/sec]")
+
+        # Create sine wave
+        sine_wave = axes.plot(lambda x: np.sin(x), color=RED)
+
+        # Group all elements
+        graph = VGroup(axes, x_label, y_label, sine_wave)
+
+        # Show the graph
+        self.play(Create(axes), Write(x_label), Write(y_label))
+        self.play(Create(sine_wave))
+        self.wait(2)
+
+        # Create function with harmonics
+        def harmonic_function(x):
+            return (np.sin(x) + 
+                    0.1 * np.sin(5*x) - 
+                    0.1 * np.sin(7*x) + 
+                    0.03 * np.sin(9*x) - 
+                    0.03 * np.sin(11*x))
+
+        # Create harmonic wave
+        harmonic_wave = axes.plot(harmonic_function, color=GREEN)
+
+        # Fade out the original sine wave and fade in the harmonic wave
+        self.play(FadeOut(sine_wave), FadeIn(harmonic_wave), run_time = 1.5)
+
+        self.wait(2)
+
+
+
+
+
+class TorqueAndFluxEquations(Scene):
+    def construct(self):
+        # Torque equation
+        torque_eq = MathTex(
+            r"T = \frac{3}{2} \cdot PP \cdot (\psi \cdot i_q + (L_d - L_q) \cdot i_q \cdot i_d)"
+        ).scale(1.2).move_to(2*UP)
+
+        # Legend for torque equation
+        legend_torque = VGroup(
+            Text("T - Torque [Nm]", slant=ITALIC),
+            Text("PP - Pole pairs", slant=ITALIC),
+            Text("ψ - Flux linkage [Wb]", slant=ITALIC),
+            Text("Ld, Lq - d and q axis inductances [H]", slant=ITALIC),
+            Text("id, iq - Current vector projections on the d and q axes [A]", slant=ITALIC)
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.3).scale(0.5)
+
+        # Group torque equation and legend
+        torque_group = VGroup(torque_eq, legend_torque).arrange(DOWN, buff=0.8)
+
+        # Show torque equation and legend
+        self.play(Write(torque_eq))
+        self.play(Write(legend_torque))
+        self.wait(5)
+
+        # Fade out torque equation and legend
+        self.play(FadeOut(torque_group))
+
+        # Flux linkage equation
+        flux_eq = MathTex(
+            r"\psi = \frac{K_e}{\frac{3}{2} \cdot PP}"
+        ).scale(1.2).move_to(2*UP)
+
+        # Legend for flux linkage equation
+        legend_flux = VGroup(
+            Text("PP - Pole pairs", slant=ITALIC),
+            Text("ψ - Flux linkage [Wb]", slant=ITALIC),
+            Text("Ke - BEMF constant [V/rad/sec]", slant=ITALIC)
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.3).scale(0.5)
+
+        # Group flux equation and legend
+        flux_group = VGroup(flux_eq, legend_flux).arrange(DOWN, buff=0.8)
+
+        # Show flux linkage equation and legend
+        self.play(Write(flux_group))
+        self.wait(4)
+
+
+
+
+class SineWaveFrequencyAmplitude(Scene):
+    def construct(self):
+        # Create axes
+        axes = Axes(
+            x_range=[0, 2 * np.pi, np.pi / 2],
+            y_range=[-4, 4, 1],
+            axis_config={"color": BLUE},
+            tips=False
+        )
+
+        # Add labels to the axes
+        x_label = axes.get_x_axis_label("Time [sec]")
+        y_label = axes.get_y_axis_label("Amplitude [V]")
+
+        # Initial sine wave (frequency = 1, amplitude = 1)
+        sine_wave = always_redraw(
+            lambda: axes.plot(lambda x: np.sin(x), color=RED)
+        )
+
+        # Show the axes and the initial sine wave
+        self.play(Create(axes), Write(x_label), Write(y_label))
+        self.play(Create(sine_wave))
+        self.wait(1)
+
+        # Increase frequency and amplitude over time
+        def update_wave(mob, dt):
+            mob.frequency += 0.3*dt  # Gradually increase frequency
+            mob.amplitude += 0.3*dt  # Gradually increase amplitude
+            mob.become(
+                axes.plot(
+                    lambda x: mob.amplitude * np.sin(mob.frequency * x),
+                    color=RED
+                )
+            )
+
+        # Add frequency and amplitude attributes to the sine wave
+        sine_wave.frequency = 1
+        sine_wave.amplitude = 1
+
+        # Apply the updater to the sine wave
+        sine_wave.add_updater(update_wave)
+
+        # Let the animation run for a while (e.g., 5 seconds)
+        self.wait(10)
+
+        # Remove the updater and stop the animation
+        sine_wave.remove_updater(update_wave)
+
+
+
 
 if __name__ == "__main__":
     from manim import config
@@ -1024,7 +1168,7 @@ if __name__ == "__main__":
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
-    EquationsScene().render()
+    SineWaveFrequencyAmplitude().render()
 
     # Automatically open the output file
     if platform.system() == 'Windows':
