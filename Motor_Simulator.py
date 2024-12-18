@@ -416,7 +416,7 @@ def third_harmonic(va_in, vb_in, vc_in, mod_factor):
     
 
 
-def estimate_BW(control):    
+def estimate_BW(control, app):
     '''
     Plots the bode plots of the close loop system response of the q and d axes.
     '''
@@ -443,9 +443,17 @@ def estimate_BW(control):
 
     G_delay = ctrl.TransferFunction(num_delay, den_delay)
 
-    OL_d = ctrl.series(G_d, PI_d, G_delay)
+    # If needed, voltage to PWM compare value.
+    # For example, for a period value of 1000:
+    # 50%   = 500   = 0 [V]
+    # 0%    = 0     = -VBus/2
+    # 100%  = 1000  = VBus/2
+    # K_PWM = app.vbus / 1000
+    K_PWM = 1
+
+    OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM)
     CL_d = ctrl.feedback(OL_d,1)
-    OL_q = ctrl.series(G_q, PI_q, G_delay)
+    OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM)
     CL_q = ctrl.feedback(OL_q,1)
 
     # Plot Bode plots
@@ -618,7 +626,7 @@ app = Application()
 control = MotorControl()
 
 # Uncomment to show closed loop bode plots of q and d axes:
-# estimate_BW(control)
+# estimate_BW(control, app)
 
 # Run the simulation
 simulate_motor(motor, sim, app, control)
