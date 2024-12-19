@@ -188,7 +188,7 @@ class Application:
         self.acceleration = acceleration
         self.current_ramp = current_ramp
         self.vbus = vbus
-        self.pi_v_lim = vbus * 0.75                 # Max allowed vq,vd outputs.
+        self.pi_v_lim = vbus * 0.75                 # Max allowed vq,vd outputs (Max allowed overmodulation).
         self.max_phase_v = vbus / 2                 # Max phase voltage
         self.init_speed = init_speed
         self.short_circuit = short_circuit
