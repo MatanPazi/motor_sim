@@ -30,8 +30,8 @@ from scipy.integrate import solve_ivp
 import control as ctrl
 
 class Motor:
-    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.003, Lq_base=0.0001, Ld_base=0.00007,
-                 bemf_const=0.1, inertia=0.01, visc_fric_coeff=0.005, i_max = 600):
+    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.0028, Lq_base=0.000077, Ld_base=0.0000458,
+                 bemf_const=0.11459, inertia=0.01, visc_fric_coeff=0.005, i_max = 600):
         '''
         Specifies motor-related parameters.
 
@@ -161,8 +161,8 @@ class Simulation:
         self.time_points = np.arange(0, total_time, time_step)
 
 class Application:
-    def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=50.0, commanded_id=0.0,
-                 acceleration=20000.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
+    def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=200.0, commanded_id=-50.0,
+                 acceleration=10000.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
         '''
         Initializes application-related parameters:
         
@@ -188,7 +188,8 @@ class Application:
         self.acceleration = acceleration
         self.current_ramp = current_ramp
         self.vbus = vbus
-        self.max_vs = vbus / 2
+        self.pi_v_lim = vbus * 0.75                 # Max allowed vq,vd outputs.
+        self.max_phase_v = vbus / 2                 # Max phase voltage
         self.init_speed = init_speed
         self.short_circuit = short_circuit
 
@@ -216,7 +217,7 @@ class MotorControl:
         self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
 
-    def pi_control(self, error_iq, error_id, current_time, vq, vd, max_vs):
+    def pi_control(self, error_iq, error_id, current_time, vq, vd, pi_v_lim):
         """
         Parallel current loop PI controller.
         """          
@@ -228,11 +229,11 @@ class MotorControl:
             vd = self.kp_d * error_id + self.ki_d * self.integral_error_id
             self.last_update_time = current_time
             # Saturation handling (Clamping)
-            if ((vq**2 + vd**2) > max_vs**2):
+            if ((vq**2 + vd**2) > pi_v_lim**2):
                 # Clamp integrals
                 self.saturation = 1
                 # Prevent exceeding max vs
-                volt_amp_gain = max_vs / np.sqrt(vq**2 + vd**2)                
+                volt_amp_gain = pi_v_lim / np.sqrt(vq**2 + vd**2)                
                 vq *= volt_amp_gain
                 vd *= volt_amp_gain
             else:
@@ -311,13 +312,13 @@ def phase_current_ode(t, currents, va, vb, vc, motor):
 
     return [di_a_dt, di_b_dt, di_c_dt]
 
-def center_aligned_pwm_with_deadtime(va, vb, vc, max_vs, t, pwm_period, half_period, dead_time):
+def center_aligned_pwm_with_deadtime(va, vb, vc, max_v, t, pwm_period, half_period, dead_time):
     """
     Generates center-aligned PWM signals for top and bottom transistors with dead-time:
 
     Args:
         v (float): phase voltages [V]
-        max_vs (float): max phase voltage (Modulation dependent) [V]
+        max_v (float): max phase voltage (vbus/2) [V]
         t (float): time in simulation [sec]
         pwm_period (float): equals to the sampling time [sec]
         dead_time (float): dead time [sec]
@@ -330,9 +331,9 @@ def center_aligned_pwm_with_deadtime(va, vb, vc, max_vs, t, pwm_period, half_per
     time_in_period = t % pwm_period
 
     # Calculate duty cycles for each phase (between 0 and 1, default is 0.5)
-    duty_a = (va / max_vs + 1) / 2
-    duty_b = (vb / max_vs + 1) / 2
-    duty_c = (vc / max_vs + 1) / 2
+    duty_a = (va / max_v + 1) / 2
+    duty_b = (vb / max_v + 1) / 2
+    duty_c = (vc / max_v + 1) / 2
 
     # Find position along triangular carrier waveform
     carrier_wave = time_in_period / half_period if time_in_period < half_period else (pwm_period - time_in_period) / half_period
@@ -557,15 +558,22 @@ def simulate_motor(motor, sim, app, control):
         error_list.append([error_iq, error_id])
         
         # Calculate dq voltage commands
-        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.max_vs)
+        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.pi_v_lim)
         vqd_list.append([vq, vd])
         
         # Convert Vdq voltages to abc frame
-        va_sineMod, vb_sineMod, vc_sineMod = inverse_dq_transform(vq, vd, angle_e)
+        va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(vq, vd, angle_e)
+
+        va_sineMod = max(min(va_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
+        vb_sineMod = max(min(vb_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
+        vc_sineMod = max(min(vc_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
         vabc_sine_mod_list.append([va_sineMod, vb_sineMod, vc_sineMod])
         
         # Add third harmonic approx. to sinusoidal modulation.
-        va, vb, vc = third_harmonic(va_sineMod, vb_sineMod, vc_sineMod, control.mod_fact)
+        va_unclipped, vb_unclipped, vc_unclipped = third_harmonic(va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped, control.mod_fact)
+        va = max(min(va_unclipped, app.max_phase_v), -app.max_phase_v)
+        vb = max(min(vb_unclipped, app.max_phase_v), -app.max_phase_v)
+        vc = max(min(vc_unclipped, app.max_phase_v), -app.max_phase_v)        
         vabc_list.append([va, vb, vc])
 
         phase_volt_diff.append([va-vb, vb-vc, vc-va])
@@ -574,7 +582,7 @@ def simulate_motor(motor, sim, app, control):
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
         if (app.short_circuit == False):# or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
-            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, app.vbus, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
+            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, app.vbus/2, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
         else:
             pwm_signals_top = [0, 0, 0]
             pwm_signals_bottom = [1, 1, 1]                    
