@@ -653,6 +653,8 @@ self_inductance_dot_list = np.array(self_inductance_dot_list)
 mutual_inductance_dot_list = np.array(mutual_inductance_dot_list)
 phase_volt_diff = np.array(phase_volt_diff)
 phase_volt_diff_sine_mod = np.array(phase_volt_diff_sine_mod)
+voltage_amplitude = np.sqrt(vqd_list[:, 0]**2 + vqd_list[:, 1]**2)
+voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
 
 plt.figure(figsize=(10, 8))
 
@@ -667,6 +669,8 @@ plt.legend()
 plt.subplot(4, 1, 2)
 plt.plot(time_points, vqd_list[:, 0], label='Vq')
 plt.plot(time_points, vqd_list[:, 1], label='Vd')
+plt.plot(time_points, voltage_amplitude, label='Voltage amplitude')
+plt.plot(time_points, voltage_limit, label='limit', linestyle = 'dashed', color = 'red')
 plt.title('Vqd')
 plt.legend()
 
