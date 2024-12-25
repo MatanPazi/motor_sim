@@ -376,8 +376,6 @@ class SineWaves120ChgAmp(Scene):
 
 
 
-from manim import *
-
 class MatrixVectorMultiplication(Scene):
     def construct(self):
         # Define the matrix with symbolic variables
