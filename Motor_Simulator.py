@@ -77,10 +77,10 @@ class Motor:
         #   None for no bemf harmonics
         #   dictionary for desired harmonics
         self.harmonics = None
-        # self.harmonics = {1: {'harmonic': 5, 'mag': bemf_const / 20},
+        # self.harmonics = {1: {'harmonic': 5, 'mag': -bemf_const / 20},
         #                   2: {'harmonic': 7, 'mag': bemf_const / 20},
-        #                   3: {'harmonic': 9, 'mag': bemf_const / 40},
-        #                   4: {'harmonic': 11, 'mag': bemf_const / 40}}
+        #                   3: {'harmonic': 11, 'mag': -bemf_const / 40},
+        #                   4: {'harmonic': 13, 'mag': bemf_const / 40}}
         self.inertia = inertia
         self.visc_fric_coeff = visc_fric_coeff
         self.i_max = i_max
