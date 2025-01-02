@@ -134,7 +134,7 @@ class Motor:
         bemf = self.bemf_const * np.cos(angle + phase_shift)
         if self.harmonics:
             for _, data in self.harmonics.items():
-                bemf += data['mag'] * np.cos(data['harmonic'] * angle + phase_shift)        
+                bemf += data['mag'] * np.cos(data['harmonic'] * (angle + phase_shift))
         return bemf
 
     def torque(self, iq, id):
