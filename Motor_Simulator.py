@@ -232,33 +232,10 @@ class MotorControl:
         self.afc_vd = 0
         self.afc_vq = 0
 
-    def pi_control(self, error_iq, error_id, current_time, vq, vd, pi_v_lim):
     def pi_control(self, error_iq, error_id):
         """
-        Parallel current loop PI controller.
-        """          
-        # Update voltages evey sampling time step
-        if (current_time - self.last_update_time) >= self.sampling_time:
-            self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
-            self.integral_error_id += error_id * self.sampling_time * (1 - self.saturation)            
-            vq = self.kp_q * error_iq + self.ki_q * self.integral_error_iq
-            vd = self.kp_d * error_id + self.ki_d * self.integral_error_id
-            self.last_update_time = current_time
-            # Saturation handling (Clamping)
-            if ((vq**2 + vd**2) > pi_v_lim**2):
-                # Clamp integrals
-                self.saturation = 1
-                # Prevent exceeding max vs
-                volt_amp_gain = pi_v_lim / np.sqrt(vq**2 + vd**2)                
-                vq *= volt_amp_gain
-                vd *= volt_amp_gain
-            else:
-                self.saturation = 0
-        else:
-            return vq, vd
         Parallel current loop PI controller.    
         
-        return vq, vd
         Args:
         TODO
         """
@@ -268,7 +245,6 @@ class MotorControl:
         self.vq = self.kp_q * error_iq + self.ki_q * self.integral_error_iq
         self.vd = self.kp_d * error_id + self.ki_d * self.integral_error_id        
     
-    def afc_control(self, error_iq, error_id, current_time, angle):    
     def afc_control(self, error_iq, error_id, angle):    
         '''
         Adaptive feedforward cancellation
@@ -276,7 +252,6 @@ class MotorControl:
         Args:
         TODO
         '''
-        if ((self.afc_method > 0) and ((current_time - self.last_update_time) >= self.sampling_time)):
         if self.afc_method > 0:
             harmonic_angle = self.afc_harmonic * angle
             harmonic_sin = np.sin(harmonic_angle)
@@ -531,8 +506,16 @@ def estimate_BW(control, app):
     K_PWM = 1
 
     OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM)
+    # If needed, an additional generic gain
+    # Some controllers use shifting instead of decimal variables. 
+    # If a PI controller's output is right-shifted by 16 for example:
+    # K_GENERIC = 1/(2**16)
+    K_GENERIC = 1
+
+    OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM, K_GENERIC)
     CL_d = ctrl.feedback(OL_d,1)
     OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM)
+    OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM, K_GENERIC)
     CL_q = ctrl.feedback(OL_q,1)
 
     # Plot Bode plots
@@ -598,8 +581,6 @@ def simulate_motor(motor, sim, app, control):
     angle_e = 0
     iq_ramped = 0
     id_ramped = 0
-    vq = 0
-    vd = 0
     ia, ib, ic = 0, 0, 0
     torque = 0
 
@@ -637,9 +618,6 @@ def simulate_motor(motor, sim, app, control):
         error_id = id_ramped - id_sensed - control.afc_id
         error_list.append([error_iq, error_id])
 
-        control.afc_control(error_iq, error_id, t, angle_e)        
-        afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
-        afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])
         # Run control loops every sampling time step
         if (t - control.last_update_time) >= control.sampling_time:
             # Calculate dq voltage commands
@@ -648,11 +626,6 @@ def simulate_motor(motor, sim, app, control):
             # AFC calculations
             control.afc_control(error_iq, error_id, angle_e)        
 
-        # Calculate dq voltage commands
-        vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.pi_v_lim)
-        vq += control.afc_vq
-        vd += control.afc_vd
-        vqd_list.append([vq, vd])
             # Voltage limiter
             control.voltage_limiter(app.pi_v_lim)
 
@@ -665,7 +638,6 @@ def simulate_motor(motor, sim, app, control):
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
         
         # Convert Vdq voltages to abc frame
-        va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(vq, vd, angle_e)
         va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(control.vq, control.vd, angle_e)
 
         va_sineMod = max(min(va_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
