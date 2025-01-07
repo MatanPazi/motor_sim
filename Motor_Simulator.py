@@ -195,6 +195,8 @@ class Application:
 
 class MotorControl:
     def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9):
+    def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9,
+                 afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 1):
         '''
         Initializes control related parameters:
 
@@ -216,6 +218,18 @@ class MotorControl:
         self.dead_time = dead_time
         self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
+        self.afc_ki_d = afc_ki_d
+        self.afc_ki_q = afc_ki_q
+        self.afc_sin_integral_error_d = 0
+        self.afc_sin_integral_error_q = 0        
+        self.afc_cos_integral_error_d = 0
+        self.afc_cos_integral_error_q = 0        
+        self.afc_harmonic = afc_harmonic
+        self.afc_method = afc_method
+        self.afc_id = 0
+        self.afc_iq = 0
+        self.afc_vd = 0
+        self.afc_vq = 0
 
     def pi_control(self, error_iq, error_id, current_time, vq, vd, pi_v_lim):
         """
@@ -242,6 +256,36 @@ class MotorControl:
             return vq, vd
         
         return vq, vd
+    
+    def afc_control(self, error_iq, error_id, current_time, angle):    
+        '''
+        Adaptive feedforward cancellation
+
+        Args:
+        TODO
+        '''
+        if ((self.afc_method > 0) and ((current_time - self.last_update_time) >= self.sampling_time)):
+            harmonic_angle = self.afc_harmonic * angle
+            harmonic_sin = np.sin(harmonic_angle)
+            harmonic_cos = np.cos(harmonic_angle)
+            err_post_gain_id = self.afc_ki_d * error_id
+            err_post_gain_iq = self.afc_ki_q * error_iq
+            
+            self.afc_sin_integral_error_d += harmonic_sin * (err_post_gain_id)
+            self.afc_sin_integral_error_q += harmonic_sin * (err_post_gain_iq)
+            self.afc_cos_integral_error_d += harmonic_cos * (err_post_gain_id)
+            self.afc_cos_integral_error_q += harmonic_cos * (err_post_gain_iq)
+
+            if self.afc_method == 1:
+                self.afc_vd = self.afc_sin_integral_error_d * harmonic_sin + self.afc_cos_integral_error_d * harmonic_cos
+                self.afc_vq = self.afc_sin_integral_error_q * harmonic_sin + self.afc_cos_integral_error_q * harmonic_cos                
+                self.afc_id = 0
+                self.afc_iq = 0
+            else:
+                self.afc_id = self.afc_sin_integral_error_d * harmonic_sin + self.afc_cos_integral_error_d * harmonic_cos
+                self.afc_iq = self.afc_sin_integral_error_q * harmonic_sin + self.afc_cos_integral_error_q * harmonic_cos
+                self.afc_vd = 0
+                self.afc_vq = 0
 
 def inverse_dq_transform(q, d, angle):
     '''
@@ -509,6 +553,8 @@ self_inductance_dot_list = []
 mutual_inductance_dot_list = []
 phase_volt_diff = []
 phase_volt_diff_sine_mod = []
+afc_integrals = []
+afc_outputs = []
 
 def simulate_motor(motor, sim, app, control):
     # Initializations
@@ -555,10 +601,19 @@ def simulate_motor(motor, sim, app, control):
         # Errors
         error_iq = iq_ramped - iq_sensed
         error_id = id_ramped - id_sensed    
+        error_iq = iq_ramped - iq_sensed - control.afc_iq
+        error_id = id_ramped - id_sensed - control.afc_id
         error_list.append([error_iq, error_id])
         
+
+        control.afc_control(error_iq, error_id, t, angle_e)        
+        afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
+        afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])
+
         # Calculate dq voltage commands
         vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.pi_v_lim)
+        vq += control.afc_vq
+        vd += control.afc_vd
         vqd_list.append([vq, vd])
         
         # Convert Vdq voltages to abc frame
@@ -663,6 +718,8 @@ phase_volt_diff = np.array(phase_volt_diff)
 phase_volt_diff_sine_mod = np.array(phase_volt_diff_sine_mod)
 voltage_amplitude = np.sqrt(vqd_list[:, 0]**2 + vqd_list[:, 1]**2)
 voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
+afc_integrals = np.array(afc_integrals)
+afc_outputs = np.array(afc_outputs)
 
 plt.figure(figsize=(10, 8))
 
