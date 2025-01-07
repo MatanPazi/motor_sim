@@ -505,7 +505,6 @@ def estimate_BW(control, app):
     # K_PWM = app.vbus / 1000
     K_PWM = 1
 
-    OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM)
     # If needed, an additional generic gain
     # Some controllers use shifting instead of decimal variables. 
     # If a PI controller's output is right-shifted by 16 for example:
@@ -514,7 +513,6 @@ def estimate_BW(control, app):
 
     OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM, K_GENERIC)
     CL_d = ctrl.feedback(OL_d,1)
-    OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM)
     OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM, K_GENERIC)
     CL_q = ctrl.feedback(OL_q,1)
 
@@ -635,6 +633,7 @@ def simulate_motor(motor, sim, app, control):
                     
         vqd_list.append([control.vq, control.vd])
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
+        afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_q])
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
         
         # Convert Vdq voltages to abc frame
