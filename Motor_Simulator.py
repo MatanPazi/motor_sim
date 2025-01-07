@@ -194,9 +194,9 @@ class Application:
         self.short_circuit = short_circuit
 
 class MotorControl:
-    def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9):
     def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9,
                  afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 1):
+                 afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 0):
         '''
         Initializes control related parameters:
 
@@ -599,12 +599,9 @@ def simulate_motor(motor, sim, app, control):
         iqd_sensed_list.append([iq_sensed, id_sensed])
         
         # Errors
-        error_iq = iq_ramped - iq_sensed
-        error_id = id_ramped - id_sensed    
         error_iq = iq_ramped - iq_sensed - control.afc_iq
         error_id = id_ramped - id_sensed - control.afc_id
         error_list.append([error_iq, error_id])
-        
 
         control.afc_control(error_iq, error_id, t, angle_e)        
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
