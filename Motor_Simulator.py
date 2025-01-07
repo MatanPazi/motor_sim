@@ -102,8 +102,8 @@ class Config:
         #                   4: {'harmonic': 13, 'mag': self.bemf_const / 40}}
         
         # Simulation parameters
-        self.time_step = 100e-9
-        self.total_time = 0.05
+        self.time_step = 2000e-9
+        self.total_time = 0.01
 
         # Application parameters
         self.speed_control = True
@@ -826,7 +826,7 @@ voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
 afc_integrals = np.array(afc_integrals)
 afc_outputs = np.array(afc_outputs)
 
-# Plotting data dictionary
+# Plotting data dictionary. Contains all available variables to plot.
 data = {
     "speed_m:": speed_list[:,0],
     "speed_e:": speed_list[:,1],
@@ -882,58 +882,60 @@ data = {
     "va_sineMod-vb_sineMod": phase_volt_diff_sine_mod[:, 0],
     "vb_sineMod-vc_sineMod": phase_volt_diff_sine_mod[:, 1],    
     "vc_sineMod-va_sineMod": phase_volt_diff_sine_mod[:, 2],
-
-    # "La": self_inductance_list[:, 0],
-    # "Lb": self_inductance_list[:, 1],    
-    # "Lc": self_inductance_list[:, 2],
-    # "La": self_inductance_list[:, 0],
-    # "Lb": self_inductance_list[:, 1],    
-    # "Lc": self_inductance_list[:, 2],                        
-
-
+    "v_lim": voltage_limit,
+    "v_amp": voltage_amplitude,
+    "afc_sin_d": afc_integrals[:, 0],
+    "afc_sin_q": afc_integrals[:, 1],
+    "afc_cos_d": afc_integrals[:, 2],
+    "afc_cos_q": afc_integrals[:, 3],
+    "afc_vq": afc_outputs[:, 0],    
+    "afc_vd": afc_outputs[:, 1],
+    "afc_iq": afc_outputs[:, 2],
+    "afc_id": afc_outputs[:, 3],
 }
 
 
+# Control which plot appears in which subplot (1 = appears in subplot 1, 2 = appears in subplot 2, etc.)
+# If it doesn't appear it won't be plotted
+plot_options = {
+    "iqSensed": 1,
+    "idSensed": 1,
+    "iqCmd": 1,
+    "idCmd": 1,
+    "vq": 2,
+    "vd": 2,
+    "v_amp": 2,
+    "v_lim": 2,
+    "ia": 3,
+    "ib": 3,
+    "ic": 3,
+    "bemf_a": 4,
+    "bemf_b": 4,
+    "bemf_c": 4,    
+}
 
 
+# Group plots by subplot number
+grouped_plots = {}
+for label, subplot_num in plot_options.items():
+    if subplot_num > 0:  # Ignore 0 (don't plot)
+        if subplot_num not in grouped_plots:
+            grouped_plots[subplot_num] = []  # Create new group
+        grouped_plots[subplot_num].append(label)
 
+# Create subplots dynamically
+num_subplots = max(grouped_plots.keys())  # Determine total subplots needed
+plt.figure(figsize=(10, 3 * num_subplots))  # Adjust size based on number of subplots
 
+for i in range(1, num_subplots + 1):
+    plt.subplot(num_subplots, 1, i)
+    for label in grouped_plots[i]:
+        plt.plot(time_points, data[label], label=label)
+    plt.title(", ".join(grouped_plots[i]))  # Title based on plot names
+    plt.grid(True)
+    plt.legend()
 
-
-
-
-plt.figure(figsize=(10, 8))
-
-plt.subplot(4, 1, 1)
-plt.plot(time_points, iqd_sensed_list[:, 0], label='iqSensed')
-plt.plot(time_points, iqd_sensed_list[:, 1], label='idSensed')
-plt.plot(time_points, iqd_ramped_list[:, 0], label='iqCmd')
-plt.plot(time_points, iqd_ramped_list[:, 1], label='idCmd')
-plt.title('iq, Id Cmd + Sensed')
-plt.legend()
-
-plt.subplot(4, 1, 2)
-plt.plot(time_points, vqd_list[:, 0], label='Vq')
-plt.plot(time_points, vqd_list[:, 1], label='Vd')
-plt.plot(time_points, voltage_amplitude, label='Voltage amplitude')
-plt.plot(time_points, voltage_limit, label='limit', linestyle = 'dashed', color = 'red')
-plt.title('Vqd')
-plt.legend()
-
-plt.subplot(4, 1, 3)
-plt.plot(time_points, currents[:, 0], label='Ia')
-plt.plot(time_points, currents[:, 1], label='Ib')
-plt.plot(time_points, currents[:, 2], label='Ic')
-plt.title('Currents')
-plt.legend()
-
-plt.subplot(4, 1, 4)
-plt.plot(time_points, bemf[:, 0], label='bemf_a')
-plt.plot(time_points, bemf[:, 1], label='bemf_b')
-plt.plot(time_points, bemf[:, 2], label='bemf_c')
-plt.title('Back-emf')
-plt.legend()
-
+# Adjust layout and show
 plt.tight_layout()
 plt.show()
 
