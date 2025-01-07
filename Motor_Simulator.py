@@ -195,7 +195,6 @@ class Application:
 
 class MotorControl:
     def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9,
-                 afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 1):
                  afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 0):
         '''
         Initializes control related parameters:
@@ -210,6 +209,8 @@ class MotorControl:
         self.ki_d = ki_d
         self.kp_q = kp_q
         self.ki_q = ki_q
+        self.vd = 0
+        self.vq = 0
         self.sampling_time = sampling_time
         self.half_sampling_time = self.sampling_time / 2
         self.integral_error_iq = 0
@@ -232,6 +233,7 @@ class MotorControl:
         self.afc_vq = 0
 
     def pi_control(self, error_iq, error_id, current_time, vq, vd, pi_v_lim):
+    def pi_control(self, error_iq, error_id):
         """
         Parallel current loop PI controller.
         """          
@@ -254,10 +256,20 @@ class MotorControl:
                 self.saturation = 0
         else:
             return vq, vd
+        Parallel current loop PI controller.    
         
         return vq, vd
+        Args:
+        TODO
+        """
+        # Update voltages evey sampling time step
+        self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
+        self.integral_error_id += error_id * self.sampling_time * (1 - self.saturation)            
+        self.vq = self.kp_q * error_iq + self.ki_q * self.integral_error_iq
+        self.vd = self.kp_d * error_id + self.ki_d * self.integral_error_id        
     
     def afc_control(self, error_iq, error_id, current_time, angle):    
+    def afc_control(self, error_iq, error_id, angle):    
         '''
         Adaptive feedforward cancellation
 
@@ -265,6 +277,7 @@ class MotorControl:
         TODO
         '''
         if ((self.afc_method > 0) and ((current_time - self.last_update_time) >= self.sampling_time)):
+        if self.afc_method > 0:
             harmonic_angle = self.afc_harmonic * angle
             harmonic_sin = np.sin(harmonic_angle)
             harmonic_cos = np.cos(harmonic_angle)
@@ -286,6 +299,27 @@ class MotorControl:
                 self.afc_iq = self.afc_sin_integral_error_q * harmonic_sin + self.afc_cos_integral_error_q * harmonic_cos
                 self.afc_vd = 0
                 self.afc_vq = 0
+
+    def voltage_limiter(self, pi_v_lim):
+        '''
+        Voltage limiter
+
+        Args:
+        TODO
+        '''        
+        v_amp_sqr = self.vq**2 + self.vd**2
+        # Saturation handling (Clamping)
+        if (v_amp_sqr > pi_v_lim**2):
+            # Clamp integrals
+            self.saturation = 1
+            # Prevent exceeding max vs
+            volt_amp_gain = pi_v_lim / np.sqrt(v_amp_sqr)                
+            self.vq *= volt_amp_gain
+            self.vd *= volt_amp_gain
+        else:
+            self.saturation = 0        
+
+
 
 def inverse_dq_transform(q, d, angle):
     '''
@@ -606,15 +640,33 @@ def simulate_motor(motor, sim, app, control):
         control.afc_control(error_iq, error_id, t, angle_e)        
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])
+        # Run control loops every sampling time step
+        if (t - control.last_update_time) >= control.sampling_time:
+            # Calculate dq voltage commands
+            control.pi_control(error_iq, error_id)
+
+            # AFC calculations
+            control.afc_control(error_iq, error_id, angle_e)        
 
         # Calculate dq voltage commands
         vq, vd = control.pi_control(error_iq, error_id, t, vq, vd, app.pi_v_lim)
         vq += control.afc_vq
         vd += control.afc_vd
         vqd_list.append([vq, vd])
+            # Voltage limiter
+            control.voltage_limiter(app.pi_v_lim)
+
+            control.vq += control.afc_vq
+            control.vd += control.afc_vd
+            control.last_update_time = t      
+                    
+        vqd_list.append([control.vq, control.vd])
+        afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
+        afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
         
         # Convert Vdq voltages to abc frame
         va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(vq, vd, angle_e)
+        va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(control.vq, control.vd, angle_e)
 
         va_sineMod = max(min(va_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
         vb_sineMod = max(min(vb_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
