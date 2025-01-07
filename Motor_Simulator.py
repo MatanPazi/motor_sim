@@ -293,8 +293,8 @@ class MotorControl:
         self.dead_time = config.dead_time
         self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
-        self.afc_ki_d = config.afc_ki_d
-        self.afc_ki_q = config.afc_ki_q
+        self.afc_ki_d = config.k_pwm * config.afc_ki_d / config.k_shifting
+        self.afc_ki_q = config.k_pwm * config.afc_ki_q / config.k_shifting
         self.afc_sin_integral_error_d = 0
         self.afc_sin_integral_error_q = 0        
         self.afc_cos_integral_error_d = 0
