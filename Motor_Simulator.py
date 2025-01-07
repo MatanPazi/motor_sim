@@ -71,6 +71,8 @@ class Config:
             # Control parameters
             Kp (n/a): current loop proportional gain
             Ki (n/a): current loop integral gain
+            pwm_period (n/a): center aligned PWM period
+            k_shifting (n/a): additional gain, e.g to counteract PI shifting.
             sampling_time (float): Time between artificial controller updates [sec]
             dead_time (float): Time window which both top and bottom transistors are off [sec]                
             afc_ki_q (n/a): AFC q axis integral gain
@@ -121,6 +123,13 @@ class Config:
         self.ki_d = 50.0
         self.kp_q = 0.2
         self.ki_q = 50.0
+        self.pwm_period = 1500
+        # To be able to use the same PI control parameters as used in a practical controller
+        # Additional gains must be used to:
+            # Output voltages and not compare values (k_pwm).
+            # Taking into account shifting that occurs in microprocessors to avoid floating points (k_shifting).
+        self.k_pwm = (self.vbus / 2) / self.pwm_period          # max phase voltage / PWM period
+        self.k_shifting = 2**16
         self.sampling_time = 62.5e-6
         self.dead_time = 300e-9
         self.afc_ki_q = 0.05
@@ -270,10 +279,10 @@ class MotorControl:
         '''
         Initializes control related parameters:
         '''
-        self.kp_d = config.kp_d
-        self.ki_d = config.ki_d
-        self.kp_q = config.kp_q
-        self.ki_q = config.ki_q
+        self.kp_d = config.k_pwm * config.kp_d / config.k_shifting
+        self.ki_d = config.k_pwm * config.ki_d / config.k_shifting
+        self.kp_q = config.k_pwm * config.kp_q / config.k_shifting
+        self.ki_q = config.k_pwm * config.ki_q / config.k_shifting
         self.vd = 0
         self.vq = 0
         self.sampling_time = config.sampling_time
@@ -582,23 +591,9 @@ def estimate_BW(control, app):
 
     G_delay = ctrl.TransferFunction(num_delay, den_delay)
 
-    # If needed, voltage to PWM compare value.
-    # For example, for a period value of 1000:
-    # 50%   = 500   = 0 [V]
-    # 0%    = 0     = -VBus/2
-    # 100%  = 1000  = VBus/2
-    # K_PWM = app.vbus / 1000
-    K_PWM = 1
-
-    # If needed, an additional generic gain
-    # Some controllers use shifting instead of decimal variables. 
-    # If a PI controller's output is right-shifted by 16 for example:
-    # K_GENERIC = 1/(2**16)
-    K_GENERIC = 1
-
-    OL_d = ctrl.series(G_d, PI_d, G_delay, K_PWM, K_GENERIC)
+    OL_d = ctrl.series(G_d, PI_d, G_delay)
     CL_d = ctrl.feedback(OL_d,1)
-    OL_q = ctrl.series(G_q, PI_q, G_delay, K_PWM, K_GENERIC)
+    OL_q = ctrl.series(G_q, PI_q, G_delay)
     CL_q = ctrl.feedback(OL_q,1)
 
     # Plot Bode plots
