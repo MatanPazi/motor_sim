@@ -29,13 +29,9 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import control as ctrl
 
-class Motor:
-    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.0028, Lq_base=0.000077, Ld_base=0.0000458,
-                 bemf_const=0.11459, inertia=0.01, visc_fric_coeff=0.005, i_max = 600):
 class Config:
     def __init__(self):
         '''
-        Specifies motor-related parameters.
         Initializes all script parameters:
 
         Args:
@@ -51,7 +47,6 @@ class Config:
             inertia (float): Motor inertia [kg*m^2].
             visc_fric_coeff (float): Viscous friction coefficient [Nm*s/rad].
             i_max (float): Maximum motor current [A].
-            harmonics (dict or None): Harmonic selection, either `None` or a dictionary specifying relevant harmonics.
             harmonics (dict): BEMF harmonics.
 
             # Simulation parameters
@@ -136,13 +131,6 @@ class Config:
 class Motor:
     def __init__(self, config):
         '''
-        self.motor_type = motor_type
-        self.pole_pairs = pole_pairs
-        self.Rs = Rs
-        self.Lq_base = Lq_base
-        self.Ld_base = Ld_base
-        self.Lq = Lq_base
-        self.Ld = Ld_base        
         Specifies motor-related parameters.
         '''
 
@@ -165,23 +153,10 @@ class Motor:
         self.Lab_dot = 0
         self.Lac_dot = 0
         self.Lbc_dot = 0
-        self.bemf_const = bemf_const / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
         self.bemf_const = config.bemf_const / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
-        self.flux_linkage = bemf_const / pole_pairs / 1.5
-        # Harmonics, choose preferred option (Comment out the other):
-        #   None for no bemf harmonics
-        #   dictionary for desired harmonics
-        self.harmonics = None
-        # self.harmonics = {1: {'harmonic': 5, 'mag': -bemf_const / 20},
-        #                   2: {'harmonic': 7, 'mag': bemf_const / 20},
-        #                   3: {'harmonic': 11, 'mag': -bemf_const / 40},
-        #                   4: {'harmonic': 13, 'mag': bemf_const / 40}}
-        self.inertia = inertia
-        self.visc_fric_coeff = visc_fric_coeff
-        self.i_max = i_max
         self.flux_linkage = config.bemf_const / config.pole_pairs / 1.5
         self.harmonics = config.harmonics
         self.inertia = config.inertia
@@ -232,7 +207,6 @@ class Motor:
 
     def phase_bemf(self, angle, phase_shift):
         """
-        Calculate bemf, allow for harmonics.
         Calculate bemf, allow for harmonics:
 
         Args:
@@ -250,7 +224,6 @@ class Motor:
 
     def torque(self, iq, id):
         """
-        Calculate Torque based on motor type: Synchronous or asynchronous
         Calculate Torque based on motor type: Synchronous or asynchronous:
 
         Args:
@@ -267,55 +240,19 @@ class Motor:
         return torque
 
 class Simulation:
-    def __init__(self, time_step=100e-9, total_time=0.05):
     def __init__(self, config):
         '''
         Initializes simulation related parameters:
-
-        Args:
-            time_step (float): Simualtion time step [sec]
-            total_time (float): Total simulation time [sec]
         '''
-        self.time_step = time_step
-        self.total_time = total_time
-        self.time_points = np.arange(0, total_time, time_step)
         self.time_step = config.time_step
         self.total_time = config.total_time
         self.time_points = np.arange(0, config.total_time, config.time_step)
 
 class Application:
-    def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=200.0, commanded_id=-50.0,
-                 acceleration=10000.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
     def __init__(self, config):
         '''
         Initializes application-related parameters:
-        
-        Args:
-            speed_control (bool): 
-                - True: Speed is controlled externally (e.g., by a dynamometer).
-                - False: Speed is determined by torque and motor dynamics.
-            commanded_speed (float): Final speed command [rad/sec].
-            commanded_iq (float): Final commanded q-axis current [A].
-            commanded_id (float): Final commanded d-axis current [A].
-            acceleration (float): Acceleration [rad/sec^2]. Instantaneous if set to 0.
-            current_ramp (float): Rate of change in current [A/sec].
-            vbus (float): Supply voltage [V].
-            init_speed (float): Initial speed [rad/sec].
-            short_circuit (bool): 
-                - True: Activates short circuit at a certain predetermined time.
-                - False: Normal operation.
         '''
-        self.speed_control = speed_control
-        self.commanded_speed = commanded_speed
-        self.commanded_iq = commanded_iq
-        self.commanded_id = commanded_id
-        self.acceleration = acceleration
-        self.current_ramp = current_ramp
-        self.vbus = vbus
-        self.pi_v_lim = vbus * 0.75                 # Max allowed vq,vd outputs (Max allowed overmodulation).
-        self.max_phase_v = vbus / 2                 # Max phase voltage
-        self.init_speed = init_speed
-        self.short_circuit = short_circuit
         self.speed_control = config.speed_control
         self.commanded_speed = config.commanded_speed
         self.commanded_iq = config.commanded_iq
@@ -329,49 +266,30 @@ class Application:
         self.short_circuit = config.short_circuit
 
 class MotorControl:
-    def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9,
-                 afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 0):
     def __init__(self, config):
         '''
         Initializes control related parameters:
-
-        Args:
-            Kp (n/a): current loop proportional gain
-            Ki (n/a): current loop integral gain
-            sampling_time (float): Time between artificial controller updates [sec]
-            dead_time (float): Time window which both top and bottom transistors are off [sec]
         '''
-        self.kp_d = kp_d
-        self.ki_d = ki_d
-        self.kp_q = kp_q
-        self.ki_q = ki_q
         self.kp_d = config.kp_d
         self.ki_d = config.ki_d
         self.kp_q = config.kp_q
         self.ki_q = config.ki_q
         self.vd = 0
         self.vq = 0
-        self.sampling_time = sampling_time
-        self.half_sampling_time = self.sampling_time / 2
         self.sampling_time = config.sampling_time
         self.half_sampling_time = config.sampling_time / 2
         self.integral_error_iq = 0
         self.integral_error_id = 0
         self.last_update_time = 0
-        self.dead_time = dead_time
         self.dead_time = config.dead_time
         self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
-        self.afc_ki_d = afc_ki_d
-        self.afc_ki_q = afc_ki_q
         self.afc_ki_d = config.afc_ki_d
         self.afc_ki_q = config.afc_ki_q
         self.afc_sin_integral_error_d = 0
         self.afc_sin_integral_error_q = 0        
         self.afc_cos_integral_error_d = 0
         self.afc_cos_integral_error_q = 0        
-        self.afc_harmonic = afc_harmonic
-        self.afc_method = afc_method
         self.afc_harmonic = config.afc_harmonic
         self.afc_method = config.afc_method
         self.afc_id = 0
@@ -381,11 +299,9 @@ class MotorControl:
 
     def pi_control(self, error_iq, error_id):
         """
-        Parallel current loop PI controller.    
         Parallel current loop PI controller:
         
         Args:
-        TODO
             error_iq (float): iq error (ref - sensed) [A].
             error_id (float): id error (ref - sensed) [A].
         """
@@ -397,11 +313,9 @@ class MotorControl:
     
     def afc_control(self, error_iq, error_id, angle):    
         '''
-        Adaptive feedforward cancellation
         Adaptive feedforward cancellation, attenuates harmonic oscillations on dq voltages or currents, based on method:
 
         Args:
-        TODO
             error_iq (float): iq error (ref - sensed) [A].
             error_id (float): id error (ref - sensed) [A].
             angle (float): electrical angle [rad].
@@ -431,11 +345,9 @@ class MotorControl:
 
     def voltage_limiter(self, pi_v_lim):
         '''
-        Voltage limiter
         Voltage limiter:
 
         Args:
-        TODO
             pi_v_lim (float): Max allowed vq,vd outputs (Max allowed overmodulation) [V].
         '''        
         v_amp_sqr = self.vq**2 + self.vd**2
@@ -454,7 +366,6 @@ class MotorControl:
 
 def inverse_dq_transform(q, d, angle):
     '''
-    Inverse Direct DQ transformation
     Inverse Direct DQ transformation:
 
     Args:
@@ -473,7 +384,6 @@ def inverse_dq_transform(q, d, angle):
 # Direct DQ transformation
 def dq_transform(a, b, c, angle):
     '''
-    Direct DQ transformation
     Direct DQ transformation:
 
     Args:
@@ -877,10 +787,6 @@ def simulate_motor(motor, sim, app, control):
         angle_list.append([angle_m, angle_e])
 
 # Instantiate objects
-motor = Motor()
-sim = Simulation()
-app = Application()
-control = MotorControl()
 config = Config()
 motor = Motor(config)
 sim = Simulation(config)
@@ -919,6 +825,82 @@ voltage_amplitude = np.sqrt(vqd_list[:, 0]**2 + vqd_list[:, 1]**2)
 voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
 afc_integrals = np.array(afc_integrals)
 afc_outputs = np.array(afc_outputs)
+
+# Plotting data dictionary
+data = {
+    "speed_m:": speed_list[:,0],
+    "speed_e:": speed_list[:,1],
+    "iqCmd": iqd_ramped_list[:, 0],
+    "idCmd": iqd_ramped_list[:, 1],    
+    "iqSensed": iqd_sensed_list[:, 0],
+    "idSensed": iqd_sensed_list[:, 1],
+    "err_iq": error_list[:, 0],
+    "err_id": error_list[:, 1],    
+    "vq": vqd_list[:, 0],
+    "vd": vqd_list[:, 1],        
+    "va_sin": vabc_sine_mod_list[:, 0],
+    "vb_sin": vabc_sine_mod_list[:, 1],
+    "vc_sin": vabc_sine_mod_list[:, 2],    
+    "va": vabc_list[:, 0],        
+    "vb": vabc_list[:, 1],
+    "vc": vabc_list[:, 2],    
+    "pwmTopA": pwm_list[:, 0, 0],
+    "pwmTopB": pwm_list[:, 0, 1],
+    "pwmTopC": pwm_list[:, 0, 2],
+    "pwmBottomA": pwm_list[:, 1, 0],
+    "pwmBottomB": pwm_list[:, 1, 1],
+    "pwmBottomC": pwm_list[:, 1, 2],
+    "va_terminal": v_terminal[:, 0],
+    "vb_terminal": v_terminal[:, 1],    
+    "vc_terminal": v_terminal[:, 2],        
+    "bemf_a": bemf[:, 0],
+    "bemf_b": bemf[:, 1],    
+    "bemf_c": bemf[:, 2],        
+    "ia": currents[:, 0],
+    "ib": currents[:, 1],    
+    "ic": currents[:, 2],
+    "torque": torque,
+    "angle_m": angle_list[:, 0],
+    "angle_e": angle_list[:, 1],    
+    "Lq": dq_inductance_list[:, 0],
+    "Ld": dq_inductance_list[:, 1],
+    "La": self_inductance_list[:, 0],
+    "Lb": self_inductance_list[:, 1],    
+    "Lc": self_inductance_list[:, 2],
+    "Lab": mutual_inductance_list[:, 0],
+    "Lac": mutual_inductance_list[:, 1],    
+    "Lbc": mutual_inductance_list[:, 2],
+    "La_dot": self_inductance_dot_list[:, 0],
+    "Lb_dot": self_inductance_dot_list[:, 1],    
+    "Lc_dot": self_inductance_dot_list[:, 2],    
+    "Lab_dot": mutual_inductance_dot_list[:, 0],
+    "Lac_dot": mutual_inductance_dot_list[:, 1],    
+    "Lbc_dot": mutual_inductance_dot_list[:, 2],
+    "va-vb": phase_volt_diff[:, 0],
+    "vb-vc": phase_volt_diff[:, 1],    
+    "vc-va": phase_volt_diff[:, 2],
+    "va_sineMod-vb_sineMod": phase_volt_diff_sine_mod[:, 0],
+    "vb_sineMod-vc_sineMod": phase_volt_diff_sine_mod[:, 1],    
+    "vc_sineMod-va_sineMod": phase_volt_diff_sine_mod[:, 2],
+
+    # "La": self_inductance_list[:, 0],
+    # "Lb": self_inductance_list[:, 1],    
+    # "Lc": self_inductance_list[:, 2],
+    # "La": self_inductance_list[:, 0],
+    # "Lb": self_inductance_list[:, 1],    
+    # "Lc": self_inductance_list[:, 2],                        
+
+
+}
+
+
+
+
+
+
+
+
+
 
 plt.figure(figsize=(10, 8))
 
