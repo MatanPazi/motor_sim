@@ -32,10 +32,14 @@ import control as ctrl
 class Motor:
     def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.0028, Lq_base=0.000077, Ld_base=0.0000458,
                  bemf_const=0.11459, inertia=0.01, visc_fric_coeff=0.005, i_max = 600):
+class Config:
+    def __init__(self):
         '''
         Specifies motor-related parameters.
+        Initializes all script parameters:
 
         Args:
+            # Motor parameters
             motor_type (str): Motor type for torque calculation. 
                 - 'ASYNC': Induction motor.
                 - 'SYNC': Synchronous motor types.
@@ -48,6 +52,89 @@ class Motor:
             visc_fric_coeff (float): Viscous friction coefficient [Nm*s/rad].
             i_max (float): Maximum motor current [A].
             harmonics (dict or None): Harmonic selection, either `None` or a dictionary specifying relevant harmonics.
+            harmonics (dict): BEMF harmonics.
+
+            # Simulation parameters
+            time_step (float): Simualtion time step [sec]
+            total_time (float): Total simulation time [sec]            
+
+            # Application parameters
+            speed_control (bool): 
+                - True: Speed is controlled externally (e.g., by a dynamometer).
+                - False: Speed is determined by torque and motor dynamics.
+            commanded_speed (float): Final speed command [rad/sec].
+            commanded_iq (float): Final commanded q-axis current [A].
+            commanded_id (float): Final commanded d-axis current [A].
+            acceleration (float): Acceleration [rad/sec^2]. Instantaneous if set to 0.
+            current_ramp (float): Rate of change in current [A/sec].
+            vbus (float): Supply voltage [V].
+            init_speed (float): Initial speed [rad/sec].
+            short_circuit (bool):
+                - True: Activates short circuit at a certain predetermined time.
+                - False: Normal operation.
+
+            # Control parameters
+            Kp (n/a): current loop proportional gain
+            Ki (n/a): current loop integral gain
+            sampling_time (float): Time between artificial controller updates [sec]
+            dead_time (float): Time window which both top and bottom transistors are off [sec]                
+            afc_ki_q (n/a): AFC q axis integral gain
+            afc_ki_d (n/a): AFC d axis integral gain
+            afc_harmonic (int): Harmonic in the dq axis
+            afc_method (int):
+                - 0: Inactive
+                - 1: Attenuates harmonic oscillations on dq currents.
+                - 2: Attenuates harmonic oscillations on dq voltages.
+
+        '''
+        # Motor parameters
+        self.motor_type = "SYNC"
+        self.pole_pairs = 4
+        self.Rs = 0.0028
+        self.Lq_base = 0.000077
+        self.Ld_base = 0.0000458
+        self.bemf_const = 0.11459
+        self.inertia = 0.01
+        self.visc_fric_coeff = 0.005
+        self.i_max = 600
+        # Harmonics, choose preferred option (Comment out the other):
+        #   None for no bemf harmonics
+        #   dictionary for desired harmonics
+        self.harmonics = None
+        # self.harmonics = {1: {'harmonic': 5, 'mag': -self.bemf_const / 20},
+        #                   2: {'harmonic': 7, 'mag': self.bemf_const / 20},
+        #                   3: {'harmonic': 11, 'mag': -self.bemf_const / 40},
+        #                   4: {'harmonic': 13, 'mag': self.bemf_const / 40}}
+        
+        # Simulation parameters
+        self.time_step = 100e-9
+        self.total_time = 0.05
+
+        # Application parameters
+        self.speed_control = True
+        self.commanded_speed = 100.0
+        self.commanded_iq = 200.0
+        self.commanded_id = -50
+        self.acceleration = 10000.0
+        self.current_ramp = 10000.0
+        self.vbus = 48.0
+        self.init_speed = 0.0
+        self.short_circuit = False
+
+        # Control parameters
+        self.kp_d = 0.2
+        self.ki_d = 50.0
+        self.kp_q = 0.2
+        self.ki_q = 50.0
+        self.sampling_time = 62.5e-6
+        self.dead_time = 300e-9
+        self.afc_ki_q = 0.05
+        self.afc_ki_d = 0.05
+        self.afc_harmonic = 6
+        self.afc_method = 0
+
+class Motor:
+    def __init__(self, config):
         '''
         self.motor_type = motor_type
         self.pole_pairs = pole_pairs
@@ -56,6 +143,16 @@ class Motor:
         self.Ld_base = Ld_base
         self.Lq = Lq_base
         self.Ld = Ld_base        
+        Specifies motor-related parameters.
+        '''
+
+        self.motor_type = config.motor_type
+        self.pole_pairs = config.pole_pairs
+        self.Rs = config.Rs
+        self.Lq_base = config.Lq_base
+        self.Ld_base = config.Ld_base
+        self.Lq = config.Lq_base
+        self.Ld = config.Ld_base        
         self.Laa = 0
         self.Lbb = 0
         self.Lcc = 0
@@ -69,6 +166,7 @@ class Motor:
         self.Lac_dot = 0
         self.Lbc_dot = 0
         self.bemf_const = bemf_const / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
+        self.bemf_const = config.bemf_const / np.sqrt(3)       # Convert from line-to-line to phase (Wye topology)
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
@@ -84,6 +182,11 @@ class Motor:
         self.inertia = inertia
         self.visc_fric_coeff = visc_fric_coeff
         self.i_max = i_max
+        self.flux_linkage = config.bemf_const / config.pole_pairs / 1.5
+        self.harmonics = config.harmonics
+        self.inertia = config.inertia
+        self.visc_fric_coeff = config.visc_fric_coeff
+        self.i_max = config.i_max
 
         
 
@@ -130,6 +233,14 @@ class Motor:
     def phase_bemf(self, angle, phase_shift):
         """
         Calculate bemf, allow for harmonics.
+        Calculate bemf, allow for harmonics:
+
+        Args:
+            angle (float): electrical angle [rad].
+            phase_shift (float): phase shift between the phases [rad].
+        
+        Returns:
+            bemf (float): bemf of phase at current angle [V]
         """          
         bemf = self.bemf_const * np.cos(angle + phase_shift)
         if self.harmonics:
@@ -140,6 +251,14 @@ class Motor:
     def torque(self, iq, id):
         """
         Calculate Torque based on motor type: Synchronous or asynchronous
+        Calculate Torque based on motor type: Synchronous or asynchronous:
+
+        Args:
+            iq (float): iq current [A].
+            id (float): id current [A].
+        
+        Returns:
+            torque (float): calculated torque [Nm]
         """           
         if self.motor_type == "SYNC":
             torque = 1.5 * self.pole_pairs * (self.flux_linkage * iq + (self.Ld - self.Lq) * iq * id)
@@ -149,6 +268,7 @@ class Motor:
 
 class Simulation:
     def __init__(self, time_step=100e-9, total_time=0.05):
+    def __init__(self, config):
         '''
         Initializes simulation related parameters:
 
@@ -159,10 +279,14 @@ class Simulation:
         self.time_step = time_step
         self.total_time = total_time
         self.time_points = np.arange(0, total_time, time_step)
+        self.time_step = config.time_step
+        self.total_time = config.total_time
+        self.time_points = np.arange(0, config.total_time, config.time_step)
 
 class Application:
     def __init__(self, speed_control=True, commanded_speed=100.0, commanded_iq=200.0, commanded_id=-50.0,
                  acceleration=10000.0, current_ramp=10000.0, vbus = 48, init_speed = 0, short_circuit = False):
+    def __init__(self, config):
         '''
         Initializes application-related parameters:
         
@@ -192,10 +316,22 @@ class Application:
         self.max_phase_v = vbus / 2                 # Max phase voltage
         self.init_speed = init_speed
         self.short_circuit = short_circuit
+        self.speed_control = config.speed_control
+        self.commanded_speed = config.commanded_speed
+        self.commanded_iq = config.commanded_iq
+        self.commanded_id = config.commanded_id
+        self.acceleration = config.acceleration
+        self.current_ramp = config.current_ramp
+        self.vbus = config.vbus
+        self.pi_v_lim = config.vbus * 0.75                 # Max allowed vq,vd outputs (Max allowed overmodulation).
+        self.max_phase_v = config.vbus / 2                 # Max phase voltage
+        self.init_speed = config.init_speed
+        self.short_circuit = config.short_circuit
 
 class MotorControl:
     def __init__(self, kp_d=0.2, ki_d=50.0, kp_q=0.2, ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9,
                  afc_ki_q = 0.02, afc_ki_d = 0.02, afc_harmonic = 6, afc_method = 0):
+    def __init__(self, config):
         '''
         Initializes control related parameters:
 
@@ -209,24 +345,35 @@ class MotorControl:
         self.ki_d = ki_d
         self.kp_q = kp_q
         self.ki_q = ki_q
+        self.kp_d = config.kp_d
+        self.ki_d = config.ki_d
+        self.kp_q = config.kp_q
+        self.ki_q = config.ki_q
         self.vd = 0
         self.vq = 0
         self.sampling_time = sampling_time
         self.half_sampling_time = self.sampling_time / 2
+        self.sampling_time = config.sampling_time
+        self.half_sampling_time = config.sampling_time / 2
         self.integral_error_iq = 0
         self.integral_error_id = 0
         self.last_update_time = 0
         self.dead_time = dead_time
+        self.dead_time = config.dead_time
         self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
         self.afc_ki_d = afc_ki_d
         self.afc_ki_q = afc_ki_q
+        self.afc_ki_d = config.afc_ki_d
+        self.afc_ki_q = config.afc_ki_q
         self.afc_sin_integral_error_d = 0
         self.afc_sin_integral_error_q = 0        
         self.afc_cos_integral_error_d = 0
         self.afc_cos_integral_error_q = 0        
         self.afc_harmonic = afc_harmonic
         self.afc_method = afc_method
+        self.afc_harmonic = config.afc_harmonic
+        self.afc_method = config.afc_method
         self.afc_id = 0
         self.afc_iq = 0
         self.afc_vd = 0
@@ -235,9 +382,12 @@ class MotorControl:
     def pi_control(self, error_iq, error_id):
         """
         Parallel current loop PI controller.    
+        Parallel current loop PI controller:
         
         Args:
         TODO
+            error_iq (float): iq error (ref - sensed) [A].
+            error_id (float): id error (ref - sensed) [A].
         """
         # Update voltages evey sampling time step
         self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
@@ -248,9 +398,13 @@ class MotorControl:
     def afc_control(self, error_iq, error_id, angle):    
         '''
         Adaptive feedforward cancellation
+        Adaptive feedforward cancellation, attenuates harmonic oscillations on dq voltages or currents, based on method:
 
         Args:
         TODO
+            error_iq (float): iq error (ref - sensed) [A].
+            error_id (float): id error (ref - sensed) [A].
+            angle (float): electrical angle [rad].
         '''
         if self.afc_method > 0:
             harmonic_angle = self.afc_harmonic * angle
@@ -278,9 +432,11 @@ class MotorControl:
     def voltage_limiter(self, pi_v_lim):
         '''
         Voltage limiter
+        Voltage limiter:
 
         Args:
         TODO
+            pi_v_lim (float): Max allowed vq,vd outputs (Max allowed overmodulation) [V].
         '''        
         v_amp_sqr = self.vq**2 + self.vd**2
         # Saturation handling (Clamping)
@@ -299,6 +455,15 @@ class MotorControl:
 def inverse_dq_transform(q, d, angle):
     '''
     Inverse Direct DQ transformation
+    Inverse Direct DQ transformation:
+
+    Args:
+        q (float): q value [A or V].
+        d (float): d value [A or V].
+        angle (float): electrical angle [rad].
+
+    Returns:
+        a,b,c (float): phase voltages or currents [A or V]
     '''
     a =  d * np.sin(angle) + q * np.cos(angle)
     b =  d * np.sin(angle - 2*np.pi/3) + q * np.cos(angle - 2*np.pi/3)
@@ -309,6 +474,16 @@ def inverse_dq_transform(q, d, angle):
 def dq_transform(a, b, c, angle):
     '''
     Direct DQ transformation
+    Direct DQ transformation:
+
+    Args:
+        a (float): a value [A or V].
+        b (float): b value [A or V].
+        c (float): c value [A or V].
+        angle (float): electrical angle [rad].
+
+    Returns:
+        q,d (float): dq currents or voltages [A or V]        
     '''    
     d = (2/3) * (a * np.sin(angle) + b * np.sin(angle - 2*np.pi/3) + c * np.sin(angle + 2*np.pi/3))
     q = (2/3) * (a * np.cos(angle) + b * np.cos(angle - 2*np.pi/3) + c * np.cos(angle + 2*np.pi/3))    
@@ -632,7 +807,6 @@ def simulate_motor(motor, sim, app, control):
             control.last_update_time = t      
                     
         vqd_list.append([control.vq, control.vd])
-        afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_d])
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_q])
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
         
@@ -707,6 +881,11 @@ motor = Motor()
 sim = Simulation()
 app = Application()
 control = MotorControl()
+config = Config()
+motor = Motor(config)
+sim = Simulation(config)
+app = Application(config)
+control = MotorControl(config)
 
 # Uncomment to show closed loop bode plots of q and d axes:
 # estimate_BW(control, app)
