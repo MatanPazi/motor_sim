@@ -352,6 +352,20 @@ class MotorControl:
                 self.afc_vd = 0
                 self.afc_vq = 0
 
+    def decoupling(self, iq, id, speed, bemf_const, Ld, Lq):    
+        '''
+        Adding feedforward voltages to vd and vq to remove any addition not relating to id and iq respectively:        
+
+        Args:
+            iq (float): iq ref command [A].
+            id (float): id ref command [A].
+            speed (float): electrical speed [rad/sec].
+        '''
+        self.vq += speed * (bemf_const + Ld * id)
+        self.vd -= speed * Lq * iq
+
+
+
     def voltage_limiter(self, pi_v_lim):
         '''
         Voltage limiter:
@@ -713,8 +727,11 @@ def simulate_motor(motor, sim, app, control):
             # AFC calculations
             control.afc_control(error_iq, error_id, angle_e)        
 
+            # Decoupling
+            control.decoupling(iq_ramped, id_ramped, speed_e, motor.bemf_const, motor.Ld, motor.Lq)
+
             # Voltage limiter
-            control.voltage_limiter(app.pi_v_lim)
+            control.voltage_limiter(app.pi_v_lim)            
 
             control.vq += control.afc_vq
             control.vd += control.afc_vd
