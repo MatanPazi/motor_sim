@@ -625,6 +625,15 @@ def estimate_BW(control, app):
     plt.title('Q Axis:    BW = ' + "{:.0f}".format(BW_q) + '[Hz]', x = 0.5, y = 2.1, fontsize = 20)
     plt.legend()
 
+    plt.figure(3)
+    T, yout = ctrl.step_response(CL_d)
+    plt.plot(T,yout)
+    plt.title('D axis CL step response', fontsize = 20)
+
+    plt.figure(4)
+    T, yout = ctrl.step_response(CL_q)
+    plt.plot(T,yout)
+    plt.title('Q axis CL step response', fontsize = 20)    
     plt.show()    
 
 # Lists for plotting:
