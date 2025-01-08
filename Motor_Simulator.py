@@ -87,10 +87,10 @@ class Config:
         # Motor parameters
         self.motor_type = "SYNC"
         self.pole_pairs = 4
-        self.Rs = 0.0028
-        self.Lq_base = 0.000077
-        self.Ld_base = 0.0000458
-        self.bemf_const = 0.11459
+        self.Rs = 0.0031
+        self.Lq_base = 0.000101
+        self.Ld_base = 0.000067
+        self.bemf_const = 0.102
         self.inertia = 0.01
         self.visc_fric_coeff = 0.005
         self.i_max = 600
@@ -105,7 +105,7 @@ class Config:
         
         # Simulation parameters
         self.time_step = 2000e-9
-        self.total_time = 0.01
+        self.total_time = 0.05
 
         # Application parameters
         self.speed_control = True
@@ -119,19 +119,19 @@ class Config:
         self.short_circuit = False
 
         # Control parameters
-        self.kp_d = 0.2
-        self.ki_d = 50.0
-        self.kp_q = 0.2
-        self.ki_q = 50.0
-        self.pwm_period = 1500
+        self.kp_d = 70000
+        self.ki_d = 450
+        self.kp_q = 75000
+        self.ki_q = 400
+        self.pwm_period = 1024
         # To be able to use the same PI control parameters as used in a practical controller
         # Additional gains must be used to:
             # Output voltages and not compare values (k_pwm).
             # Taking into account shifting that occurs in microprocessors to avoid floating points (k_shifting).
         self.k_pwm = (self.vbus / 2) / self.pwm_period          # max phase voltage / PWM period
-        self.k_shifting = 2**16
+        self.k_shifting = 2**13
         self.sampling_time = 62.5e-6
-        self.dead_time = 300e-9
+        self.dead_time = 0e-9
         self.afc_ki_q = 0.05
         self.afc_ki_d = 0.05
         self.afc_harmonic = 6
@@ -280,9 +280,9 @@ class MotorControl:
         Initializes control related parameters:
         '''
         self.kp_d = config.k_pwm * config.kp_d / config.k_shifting
-        self.ki_d = config.k_pwm * config.ki_d / config.k_shifting
+        self.ki_d = config.k_pwm * config.ki_d / config.k_shifting / config.sampling_time
         self.kp_q = config.k_pwm * config.kp_q / config.k_shifting
-        self.ki_q = config.k_pwm * config.ki_q / config.k_shifting
+        self.ki_q = config.k_pwm * config.ki_q / config.k_shifting / config.sampling_time
         self.vd = 0
         self.vq = 0
         self.sampling_time = config.sampling_time
