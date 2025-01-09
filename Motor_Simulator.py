@@ -28,6 +28,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import control as ctrl
+from scipy.optimize import minimize
+from math import sin, cos, radians
 
 class Config:
     def __init__(self):
@@ -47,6 +49,8 @@ class Config:
             inertia (float): Motor inertia [kg*m^2].
             visc_fric_coeff (float): Viscous friction coefficient [Nm*s/rad].
             i_max (float): Maximum motor current [A].
+            torque_max (float): Maximum torque at maximum current [Nm].
+            speed_max (float): Maximum speed [rad/sec].
             harmonics (dict): BEMF harmonics.
 
             # Simulation parameters
@@ -97,6 +101,8 @@ class Config:
         self.inertia = 0.01
         self.visc_fric_coeff = 0.005
         self.i_max = 600
+        self.torque_max = 70
+        self.speed_max = 7000 * (2 * np.pi / 60)
         # Harmonics, choose preferred option (Comment out the other):
         #   None for no bemf harmonics
         #   dictionary for desired harmonics
@@ -175,7 +181,8 @@ class Motor:
         self.inertia = config.inertia
         self.visc_fric_coeff = config.visc_fric_coeff
         self.i_max = config.i_max
-
+        self.torque_max = config.torque_max
+        self.speed_max = config.speed_max
         
 
     def inductance_dq(self, iq, id):
@@ -665,6 +672,89 @@ def estimate_BW(control, app):
     plt.title('Q axis CL step response', fontsize = 20)    
     plt.show()    
 
+
+def mtpa_cost_func(x, we, imax, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
+    '''
+    Finds max torque within current and voltage constraints \n
+    Args:
+        x - [Current amplitude [A], angle [deg]]
+        we - Electrical speed [rad/sec]
+        imax - Max allowed current amplitude [A]
+        vmax - Max allowed voltage amplitude [V]
+        torque_const - Torque constant [Nm/A]
+        Lq - Modified q axis inductance (Based on current) [uH]
+        Ld - Modified d axis inductance (Based on current) [uH]
+    Return:
+        cost
+    '''    
+    amp = x[0]
+    ang = x[1]  
+    iq = amp * sin(ang)
+    id = -amp * cos(ang)
+    torque = PP * (3/2) * (torque_const*iq + (Ld - Lq)*id*iq)
+    if (torque > 0.01):
+        cost = (1 / torque)
+    else:
+        cost = 10000
+    
+    # Constraints:
+    # Iq > 0
+    if iq < 0:
+        cost = cost ** (1 - iq)
+
+    # Id < 0
+    if id > 0:
+        cost = cost ** (1 + id)
+    
+    # Current amplitude constraint: sqrt(iq^2 + id^2) < iMax
+    iSize = np.sqrt(iq**2 + id**2)
+    if (iSize > imax):
+        cost = cost ** (1 + (iSize/imax))        
+
+    # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
+    Vd = (Rs*id - we*iq*Lq)
+    Vq = (Rs*iq + we*(id*Ld + bemf_const))        
+    VSize = np.sqrt(Vq**2 + Vd**2)
+    if (VSize > vmax):
+        cost = cost ** (1 + 10*(VSize/vmax))
+
+    return abs(cost)
+
+
+
+def mtpa_gen(motor, app):
+    '''
+    Runs mtpa_cost_func() at all relevant points to get a LUT
+    Args:
+
+    Return:
+        cost
+    '''      
+    torque_list = np.linspace(0,motor.torque_max, 50)
+    speed_list = np.linspace(0,motor.speed_max, 50)
+    current_list_steps = int(50 * (motor.i_max / motor.torque_max))
+    current_list = np.linspace(motor.i_max / current_list_steps, motor.i_max, current_list_steps - 1)
+    vmax = app.vbus / np.sqrt(3)    
+
+    current_lut = [[[0, 0] for _ in speed_list] for _ in current_list]
+    torque_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
+    
+    for i in current_list:
+        x0 = list(zip(np.linspace(0, i, 5), np.linspace(0, np.pi/2, 5)))
+        motor.inductance_dq(i/np.sqrt(2), i/np.sqrt(2))
+        for speed in speed_list:
+            if speed > 0:
+                idmin = (vmax/speed - motor.bemf_const)/motor.Ld  # Minimal required Id current (Relevent only when negative).        
+                if i < abs(idmin):
+                    break
+            res = []
+            for iter in range(5):
+                res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (speed, i, vmax, motor.flux_linkage, motor.bemf_const, motor.Lq, motor.Ld, motor.pole_pairs, motor.Rs)))
+                debug = res[iter].fun
+
+
+
+
 # Lists for plotting:
 speed_list = []
 iqd_ramped_list = []
@@ -839,6 +929,9 @@ control = MotorControl(config)
 
 # Uncomment to show closed loop bode plots of q and d axes:
 # estimate_BW(control, app)
+
+# Calculates this motor's MTPA LUT
+# mtpa_gen(motor, app)
 
 # Run the simulation
 simulate_motor(motor, sim, app, control)
