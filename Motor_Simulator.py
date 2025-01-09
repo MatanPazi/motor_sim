@@ -673,7 +673,7 @@ def estimate_BW(control, app):
     plt.show()    
 
 
-def mtpa_cost_func(x, we, imax, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
+def mtpa_cost_func(x, ref_torque, we, imax, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs, degInRad):
     '''
     Finds max torque within current and voltage constraints \n
     Args:
@@ -692,31 +692,44 @@ def mtpa_cost_func(x, we, imax, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
     iq = amp * sin(ang)
     id = -amp * cos(ang)
     torque = PP * (3/2) * (torque_const*iq + (Ld - Lq)*id*iq)
-    if (torque > 0.01):
-        cost = (1 / torque)
-    else:
-        cost = 10000
+    cost = abs(ref_torque - torque)
     
     # Constraints:
+    # Make sure this is the optimal angle
+    # Check with the same amplitude, if the torque is smaller for adjacent angles.
+
+    iqIncAng = amp * sin(ang + degInRad)
+    idIncAng = -amp * cos(ang + degInRad)
+
+    iqDecAng = amp * sin(ang - degInRad)
+    idDecAng = -amp * cos(ang - degInRad)
+    
+    torqIncAng = PP * (3/2) * (torque_const*iqIncAng + (Ld - Lq)*idIncAng*iqIncAng)
+
+    torqDecAng = PP * (3/2) * (torque_const*iqDecAng + (Ld - Lq)*idDecAng*iqDecAng)
+
+    # if (torqIncAng > torque) or (torqDecAng > torque):
+    cost *= 2 ** (1 + (abs(2*torque - (torqIncAng + torqDecAng))))
+
     # Iq > 0
     if iq < 0:
-        cost = cost ** (1 - iq)
+        cost *= 2 ** (1 - iq)
 
     # Id < 0
     if id > 0:
-        cost = cost ** (1 + id)
+        cost *= 2 ** (1 + id)
     
     # Current amplitude constraint: sqrt(iq^2 + id^2) < iMax
     iSize = np.sqrt(iq**2 + id**2)
     if (iSize > imax):
-        cost = cost ** (1 + (iSize/imax))        
+        cost *= 2 ** (1 + (iSize/imax))        
 
     # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
     Vd = (Rs*id - we*iq*Lq)
     Vq = (Rs*iq + we*(id*Ld + bemf_const))        
     VSize = np.sqrt(Vq**2 + Vd**2)
     if (VSize > vmax):
-        cost = cost ** (1 + 10*(VSize/vmax))
+        cost *= 2 ** (1 + 10*(VSize/vmax))
 
     return abs(cost)
 
@@ -732,27 +745,35 @@ def mtpa_gen(motor, app):
     '''      
     torque_list = np.linspace(0,motor.torque_max, 50)
     speed_list = np.linspace(0,motor.speed_max, 50)
-    current_list_steps = int(50 * (motor.i_max / motor.torque_max))
-    current_list = np.linspace(motor.i_max / current_list_steps, motor.i_max, current_list_steps - 1)
-    vmax = app.vbus / np.sqrt(3)    
-
-    current_lut = [[[0, 0] for _ in speed_list] for _ in current_list]
-    torque_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
+    vmax = app.vbus / np.sqrt(3)
+    degInRad = 2*np.pi / 360
     
-    for i in current_list:
-        x0 = list(zip(np.linspace(0, i, 5), np.linspace(0, np.pi/2, 5)))
-        motor.inductance_dq(i/np.sqrt(2), i/np.sqrt(2))
-        for speed in speed_list:
-            if speed > 0:
-                idmin = (vmax/speed - motor.bemf_const)/motor.Ld  # Minimal required Id current (Relevent only when negative).        
-                if i < abs(idmin):
-                    break
-            res = []
-            for iter in range(5):
-                res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (speed, i, vmax, motor.flux_linkage, motor.bemf_const, motor.Lq, motor.Ld, motor.pole_pairs, motor.Rs)))
-                debug = res[iter].fun
+    mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
+    
+    for trq_index in range(len(torque_list)):
+        x0 = list(zip(np.linspace(motor.i_max * (torque_list[trq_index]/motor.torque_max) / 5, motor.i_max * (torque_list[trq_index]/motor.torque_max), 5), np.linspace(np.pi/20, np.pi/2, 5)))        
+        for speed_index in range(len(speed_list)):
+            if (trq_index == 0):
+                id_min = (vmax/speed_list[speed_index] - motor.bemf_const)/motor.Ld_base  # Minimal required Id current for PMSM
+                if id_min < 0:
+                    mtpa_lut[trq_index][speed_index] = [0.0, id_min]
+            else:
+                res = []
+                cost = []
+                for iter in range(5):
+                    motor.inductance_dq(x0[iter][0]/np.sqrt(2), x0[iter][0]/np.sqrt(2))
+                    res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (torque_list[trq_index], speed_list[speed_index], motor.i_max, vmax, motor.flux_linkage, motor.bemf_const, motor.Lq, motor.Ld, motor.pole_pairs, motor.Rs, degInRad)))
+                    cost.append(res[iter].fun)
+                
+                abs_cost = [abs(ele) for ele in cost]
+                min_cost = min(abs_cost)
+                min_index = abs_cost.index(min_cost)
 
-
+                amplitude = res[min_index].x[0]
+                angle = res[min_index].x[1]
+                iq = amplitude * sin(angle)    
+                id = -amplitude * cos(angle)                    
+                mtpa_lut[trq_index][speed_index]
 
 
 # Lists for plotting:
@@ -931,7 +952,7 @@ control = MotorControl(config)
 # estimate_BW(control, app)
 
 # Calculates this motor's MTPA LUT
-# mtpa_gen(motor, app)
+mtpa_gen(motor, app)
 
 # Run the simulation
 simulate_motor(motor, sim, app, control)
