@@ -79,9 +79,12 @@ class Config:
             afc_ki_d (n/a): AFC d axis integral gain
             afc_harmonic (int): Harmonic in the dq axis
             afc_method (int):
-                - 0: Inactive
+                - 0: Inactive   
                 - 1: Attenuates harmonic oscillations on dq currents.
                 - 2: Attenuates harmonic oscillations on dq voltages.
+            decoupling_enabled (bool):
+                - 0: Off   
+                - 1: On
 
         '''
         # Motor parameters
@@ -136,6 +139,7 @@ class Config:
         self.afc_ki_d = 0.05
         self.afc_harmonic = 6
         self.afc_method = 0
+        self.decoupling_enabled = 0
 
 class Motor:
     def __init__(self, config):
@@ -287,8 +291,12 @@ class MotorControl:
         self.vq = 0
         self.sampling_time = config.sampling_time
         self.half_sampling_time = config.sampling_time / 2
-        self.integral_error_iq = 0
-        self.integral_error_id = 0
+        self.pi_integral_out_q = 0
+        self.pi_integral_out_d = 0
+        self.pi_proportional_out_q = 0
+        self.pi_proportional_out_d = 0
+        self.pi_vq = 0
+        self.pi_vd = 0        
         self.last_update_time = 0
         self.dead_time = config.dead_time
         self.saturation = 0
@@ -305,6 +313,10 @@ class MotorControl:
         self.afc_iq = 0
         self.afc_vd = 0
         self.afc_vq = 0
+        self.decoupling_vq = 0
+        self.decoupling_vd = 0
+        self.decoupling_enabled = config.decoupling_enabled
+
 
     def pi_control(self, error_iq, error_id):
         """
@@ -315,10 +327,12 @@ class MotorControl:
             error_id (float): id error (ref - sensed) [A].
         """
         # Update voltages evey sampling time step
-        self.integral_error_iq += error_iq * self.sampling_time * (1 - self.saturation)
-        self.integral_error_id += error_id * self.sampling_time * (1 - self.saturation)            
-        self.vq = self.kp_q * error_iq + self.ki_q * self.integral_error_iq
-        self.vd = self.kp_d * error_id + self.ki_d * self.integral_error_id        
+        self.pi_integral_out_q += self.ki_q * error_iq * self.sampling_time * (1 - self.saturation)
+        self.pi_integral_out_d += self.ki_d * error_id * self.sampling_time * (1 - self.saturation)            
+        self.pi_proportional_out_q = self.kp_q * error_iq
+        self.pi_proportional_out_d = self.kp_d * error_id
+        self.pi_vq = self.pi_proportional_out_q + self.pi_integral_out_q
+        self.pi_vd = self.pi_proportional_out_d + self.pi_integral_out_d        
     
     def afc_control(self, error_iq, error_id, angle):    
         '''
@@ -361,8 +375,9 @@ class MotorControl:
             id (float): id ref command [A].
             speed (float): electrical speed [rad/sec].
         '''
-        self.vq += speed * (bemf_const + Ld * id)
-        self.vd -= speed * Lq * iq
+        if (self.decoupling_enabled):
+            self.decoupling_vq = speed * (bemf_const + Ld * id)
+            self.decoupling_vd = -speed * Lq * iq
 
 
 
@@ -656,6 +671,9 @@ iqd_ramped_list = []
 iqd_sensed_list = []
 error_list = []
 vqd_list = []
+pi_outputs = []
+pi_integral = []
+pi_proportional = []
 vabc_sine_mod_list = []
 vabc_list = []
 pwm_list = []
@@ -673,6 +691,7 @@ phase_volt_diff = []
 phase_volt_diff_sine_mod = []
 afc_integrals = []
 afc_outputs = []
+decoupling_outputs = []
 
 def simulate_motor(motor, sim, app, control):
     # Initializations
@@ -728,18 +747,22 @@ def simulate_motor(motor, sim, app, control):
             control.afc_control(error_iq, error_id, angle_e)        
 
             # Decoupling
-            control.decoupling(iq_ramped, id_ramped, speed_e, motor.bemf_const, motor.Ld, motor.Lq)
+            control.decoupling(iq_ramped, id_ramped, speed_e, motor.flux_linkage, motor.Ld, motor.Lq)
 
             # Voltage limiter
             control.voltage_limiter(app.pi_v_lim)            
 
-            control.vq += control.afc_vq
-            control.vd += control.afc_vd
+            control.vq = control.pi_vq + control.afc_vq + control.decoupling_vq
+            control.vd = control.pi_vd + control.afc_vd + control.decoupling_vd
             control.last_update_time = t      
                     
         vqd_list.append([control.vq, control.vd])
+        pi_outputs.append([control.pi_vq, control.pi_vd])
+        pi_integral.append([control.pi_integral_out_q, control.pi_integral_out_d])
+        pi_proportional.append([control.pi_proportional_out_q, control.pi_proportional_out_d])
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_q])
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
+        decoupling_outputs.append([control.decoupling_vq, control.decoupling_vd])
         
         # Convert Vdq voltages to abc frame
         va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(control.vq, control.vd, angle_e)
@@ -827,6 +850,9 @@ iqd_ramped_list = np.array(iqd_ramped_list)
 iqd_sensed_list = np.array(iqd_sensed_list)
 error_list = np.array(error_list)
 vqd_list = np.array(vqd_list)
+pi_outputs = np.array(pi_outputs)
+pi_integral = np.array(pi_integral)
+pi_proportional = np.array(pi_proportional)
 vabc_sine_mod_list = np.array(vabc_sine_mod_list)
 vabc_list = np.array(vabc_list)
 pwm_list = np.array(pwm_list)
@@ -846,6 +872,7 @@ voltage_amplitude = np.sqrt(vqd_list[:, 0]**2 + vqd_list[:, 1]**2)
 voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
 afc_integrals = np.array(afc_integrals)
 afc_outputs = np.array(afc_outputs)
+decoupling_outputs = np.array(decoupling_outputs)
 
 # Plotting data dictionary. Contains all available variables to plot.
 data = {
@@ -913,6 +940,14 @@ data = {
     "afc_vd": afc_outputs[:, 1],
     "afc_iq": afc_outputs[:, 2],
     "afc_id": afc_outputs[:, 3],
+    "decoupling_vq": decoupling_outputs[:, 0],
+    "decoupling_vd": decoupling_outputs[:, 1],
+    "pi_vq": pi_outputs[:, 0],
+    "pi_vd": pi_outputs[:, 1],
+    "pi_integral_q": pi_integral[:, 0],
+    "pi_integral_d": pi_integral[:, 1],
+    "pi_proportional_q": pi_proportional[:, 0],
+    "pi_proportional_d": pi_proportional[:, 1],
 }
 
 
