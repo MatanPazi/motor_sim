@@ -766,7 +766,21 @@ def mtpa_gen(motor, app):
                 iq = current_list[curr_index] * sin(angle)    
                 id = -current_list[curr_index] * cos(angle)
                 current_lut[curr_index][speed_index] = [iq, id, 1/min_cost]
-    print(current_lut[0][0])
+
+    # Fill mtpa_lut with values from current_lut
+    for mtpa_row_index, mtpa_torque in enumerate(torque_list):
+        for speed_index in range(len(speed_list)):
+            # Find the closest torque row in current_lut
+            closest_row_index = min(
+                range(len(current_lut)),
+                key=lambda r: abs(current_lut[r][speed_index][2] - mtpa_torque)
+            )
+            
+            # Extract Iq and Id from current_lut
+            iq, id, _ = current_lut[closest_row_index][speed_index]
+            
+            # Fill the corresponding cell in mtpa_lut
+            mtpa_lut[mtpa_row_index][speed_index] = [iq, id]
 
 
 # Lists for plotting:
