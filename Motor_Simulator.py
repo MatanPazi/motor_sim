@@ -176,7 +176,7 @@ class Motor:
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
-        self.flux_linkage = config.bemf_const / config.pole_pairs / 1.5
+        self.flux_linkage = config.bemf_const / config.pole_pairs / np.sqrt(2)
         self.harmonics = config.harmonics
         self.inertia = config.inertia
         self.visc_fric_coeff = config.visc_fric_coeff
