@@ -100,8 +100,8 @@ class Config:
         self.bemf_const = 0.102
         self.inertia = 0.01
         self.visc_fric_coeff = 0.005
-        self.i_max = 600
-        self.torque_max = 60
+        self.i_max = 750
+        self.torque_max = 72
         self.speed_max = 7000 * (2 * np.pi / 60)
         # Harmonics, choose preferred option (Comment out the other):
         #   None for no bemf harmonics
@@ -123,7 +123,7 @@ class Config:
         self.commanded_id = -50
         self.acceleration = 10000.0
         self.current_ramp = 10000.0
-        self.vbus = 48.0
+        self.vbus = 44.0
         self.init_speed = 0.0
         self.short_circuit = False
 
@@ -192,11 +192,11 @@ class Motor:
         Is = np.sqrt(iq**2 + id**2)  # Total current magnitude
         # Assuming inductance reduces by half at peak current.
         if (Is < self.i_max):
-            self.Lq = self.Lq_base * (1 - 0.5 * Is/self.i_max)
-            self.Ld = self.Ld_base * (1 - 0.5 * Is/self.i_max)
+            self.Lq = self.Lq_base * (1 - 0.55 * Is/self.i_max)
+            self.Ld = self.Ld_base * (1 - 0.55 * Is/self.i_max)
         else:
-            self.Lq = self.Lq_base * 0.5
-            self.Ld = self.Ld_base * 0.5
+            self.Lq = self.Lq_base * 0.45
+            self.Ld = self.Ld_base * 0.45
     
     def inductance_abc(self, theta):
         """
@@ -673,7 +673,7 @@ def estimate_BW(control, app):
     plt.show()    
 
 
-def mtpa_cost_func(x, curr, we, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
+def mtpa_cost_func(x, curr, we, vmax, motor):
     '''
     Finds max torque within current and voltage constraints \n
     Args:
@@ -690,7 +690,7 @@ def mtpa_cost_func(x, curr, we, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
     ang = x[0]
     iq = curr * sin(ang)
     id = -curr * cos(ang)
-    torque = abs(PP * (3/2) * (torque_const*iq + (Ld - Lq)*id*iq))
+    torque = abs(motor.pole_pairs * (3/2) * (motor.flux_linkage*iq + (motor.Ld - motor.Lq)*id*iq))
     if (torque != 0):
         cost = 1/torque
     else:
@@ -706,8 +706,8 @@ def mtpa_cost_func(x, curr, we, vmax, torque_const, bemf_const, Lq, Ld, PP, Rs):
         cost *= 100 ** (1 + id)
     
     # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
-    Vd = (Rs*id - we*iq*Lq)
-    Vq = (Rs*iq + we*(id*Ld + bemf_const))        
+    Vd = (motor.Rs*id - we*iq*motor.Lq)
+    Vq = (motor.Rs*iq + we*(id*motor.Ld + motor.bemf_const / motor.pole_pairs))        
     VSize = np.sqrt(Vq**2 + Vd**2)
     if (VSize > vmax):
         cost *= 100 ** (1 + 10*(VSize/vmax))
@@ -724,26 +724,28 @@ def mtpa_gen(motor, app):
     Return:
         cost
     '''      
-    torque_list = np.linspace(0,motor.torque_max, 50)
-    speed_list = np.linspace(0,motor.speed_max, 50)
+    torque_list = np.linspace(0,motor.torque_max, 15)
+    speed_list = np.linspace(0,motor.speed_max, 15)
     current_list = np.linspace(0,motor.i_max, int(50 * motor.i_max / motor.torque_max))
     vmax = app.vbus / np.sqrt(3)
     
     current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
-    mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
+    mtpa_lut = [[[0, 0, 0] for _ in speed_list] for _ in torque_list]
 
     # Finding accurate flux linkage according to motor datasheet.
-    # If max torque is unknown, don't update the flux linkage.
+    # If max torque is unknown, don't update the flux linkage.    
     motor.inductance_dq(motor.i_max, 0)
     for iter in range(10):
-        res = minimize(mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, motor.flux_linkage, motor.bemf_const, motor.Lq, motor.Ld, motor.pole_pairs, motor.Rs))
+        res = minimize(mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, motor))
         res_torque_max = 1/res.fun
         motor.flux_linkage = motor.flux_linkage * (motor.torque_max / res_torque_max)
     
-    for curr_index in range(len(current_list)):        
+    for curr_index in range(len(current_list)):   
+        motor.inductance_dq(current_list[curr_index], 0)     
         for speed_index in range(len(speed_list)):
+            elec_speed = speed_list[speed_index] * motor.pole_pairs
             if speed_index > 0:
-                id_min = (vmax/speed_list[speed_index] - motor.bemf_const)/motor.Ld_base  # Minimal required Id current for PMSM
+                id_min = (vmax/elec_speed - motor.bemf_const / motor.pole_pairs)/motor.Ld  # Minimal required Id current for PMSM
                 if id_min < 0:
                     if current_list[curr_index] < -id_min:
                         current_lut[curr_index][speed_index] = [0, id_min, 0]
@@ -753,9 +755,8 @@ def mtpa_gen(motor, app):
                 x0 = np.linspace(np.pi / 50, np.pi/2, 5)
                 res = []
                 cost = []
-                for iter in range(5):
-                    motor.inductance_dq(current_list[curr_index], 0)
-                    res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], speed_list[speed_index], vmax, motor.flux_linkage, motor.bemf_const, motor.Lq, motor.Ld, motor.pole_pairs, motor.Rs)))
+                for iter in range(5):                    
+                    res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], elec_speed, vmax, motor)))
                     cost.append(res[iter].fun)
                 
                 abs_cost = [abs(ele) for ele in cost]
@@ -777,10 +778,39 @@ def mtpa_gen(motor, app):
             )
             
             # Extract Iq and Id from current_lut
-            iq, id, _ = current_lut[closest_row_index][speed_index]
+            iq, id, trq = current_lut[closest_row_index][speed_index]
             
             # Fill the corresponding cell in mtpa_lut
-            mtpa_lut[mtpa_row_index][speed_index] = [iq, id]
+            mtpa_lut[mtpa_row_index][speed_index] = [iq, id, trq]
+
+    # Create scatter plot for all speeds
+    plt.figure(figsize=(10, 8))
+
+    # Iterate through speeds and plot each speed's points
+    for speed_index, speed in enumerate(speed_list):
+        # Extract Id and Iq values for the current speed (column)
+        iq_values = [row[speed_index][0] for row in mtpa_lut]
+        id_values = [row[speed_index][1] for row in mtpa_lut]
+        trq_values = [row[speed_index][2] for row in mtpa_lut]
+        
+        # Plot with a unique color for each speed
+        plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
+        # plt.title(speed)
+        # Add torque values as text annotations
+        for id_val, iq_val, torque_val in zip(id_values, iq_values, trq_values):
+            plt.text(id_val, iq_val, f"{torque_val:.1f} Nm", fontsize=9, ha='right', va='bottom')
+
+    # Label axes
+    plt.xlabel("Id (A)")
+    plt.ylabel("Iq (A)")
+    plt.title("Iq vs Id for All Speeds")
+    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+    plt.axvline(0, color='black', linewidth=0.8, linestyle='--')
+
+    # Add legend and grid
+    plt.legend()
+    plt.grid(True)
+    plt.show()       
 
 
 # Lists for plotting:
@@ -915,7 +945,7 @@ def simulate_motor(motor, sim, app, control):
         v_terminal.append([va_terminal, vb_terminal, vc_terminal])
 
         # Update Ld, Lq
-        motor.inductance_dq(iq_sensed, id_sensed)
+        motor.inductance_dq(iq_sensed, -id_sensed)
         dq_inductance_list.append([motor.Lq, motor.Ld])
         
         # Update self and mutual phase inductances
