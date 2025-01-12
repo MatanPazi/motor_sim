@@ -192,11 +192,11 @@ class Motor:
         Is = np.sqrt(iq**2 + id**2)  # Total current magnitude
         # Assuming inductance reduces by half at peak current.
         if (Is < self.i_max):
-            self.Lq = self.Lq_base * (1 - 0.55 * Is/self.i_max)
-            self.Ld = self.Ld_base * (1 - 0.55 * Is/self.i_max)
+            self.Lq = self.Lq_base * (1 - 0.4 * Is/self.i_max)
+            self.Ld = self.Ld_base * (1 - 0.3 * Is/self.i_max)
         else:
-            self.Lq = self.Lq_base * 0.45
-            self.Ld = self.Ld_base * 0.45
+            self.Lq = self.Lq_base * 0.6
+            self.Ld = self.Ld_base * 0.7
     
     def inductance_abc(self, theta):
         """
@@ -989,7 +989,7 @@ control = MotorControl(config)
 # estimate_BW(control, app)
 
 # Calculates this motor's MTPA LUT
-mtpa_gen(motor, app)
+# mtpa_gen(motor, app)
 
 # Run the simulation
 simulate_motor(motor, sim, app, control)
