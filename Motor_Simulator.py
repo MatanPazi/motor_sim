@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import control as ctrl
 from scipy.optimize import minimize
-from math import sin, cos, radians
+from math import sin, cos, radians, sqrt
 
 class Config:
     def __init__(self):
@@ -699,18 +699,18 @@ def mtpa_cost_func(x, curr, we, vmax, motor):
     # Constraints:
     # Iq > 0
     if iq < 0:
-        cost *= 100 ** (1 - iq)
+        cost *= 2 ** (1 - iq)
 
     # Id < 0
     if id > 0:
-        cost *= 100 ** (1 + id)
+        cost *= 2 ** (1 + id)
     
     # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
     Vd = (motor.Rs*id - we*iq*motor.Lq)
     Vq = (motor.Rs*iq + we*(id*motor.Ld + motor.bemf_const / motor.pole_pairs))        
     VSize = np.sqrt(Vq**2 + Vd**2)
     if (VSize > vmax):
-        cost *= 100 ** (1 + 10*(VSize/vmax))
+        cost *= 2 ** (1 + 10*(VSize/vmax))
 
     return abs(cost)
 
@@ -724,7 +724,7 @@ def mtpa_gen(motor, app):
     Return:
         cost
     '''      
-    torque_list = np.linspace(0,motor.torque_max, 15)
+    torque_list = np.linspace(0,motor.torque_max, 20)
     speed_list = np.linspace(0,motor.speed_max, 15)
     current_list = np.linspace(0,motor.i_max, int(50 * motor.i_max / motor.torque_max))
     vmax = app.vbus / np.sqrt(3)
@@ -742,6 +742,7 @@ def mtpa_gen(motor, app):
     
     for curr_index in range(len(current_list)):   
         motor.inductance_dq(current_list[curr_index], 0)     
+        x0 = np.linspace(np.pi / 50, np.pi/2, 5)
         for speed_index in range(len(speed_list)):
             elec_speed = speed_list[speed_index] * motor.pole_pairs
             if speed_index > 0:
@@ -751,8 +752,7 @@ def mtpa_gen(motor, app):
                         current_lut[curr_index][speed_index] = [0, id_min, 0]
                         continue
 
-            if curr_index > 0:
-                x0 = np.linspace(np.pi / 50, np.pi/2, 5)
+            if curr_index > 0:                
                 res = []
                 cost = []
                 for iter in range(5):                    
@@ -767,18 +767,31 @@ def mtpa_gen(motor, app):
                 iq = current_list[curr_index] * sin(angle)    
                 id = -current_list[curr_index] * cos(angle)
                 current_lut[curr_index][speed_index] = [iq, id, 1/min_cost]
+                x0 = np.linspace(angle / 5, angle, 5)
 
     # Fill mtpa_lut with values from current_lut
+    torque_threshold = motor.torque_max / 100
     for mtpa_row_index, mtpa_torque in enumerate(torque_list):
         for speed_index in range(len(speed_list)):
-            # Find the closest torque row in current_lut
-            closest_row_index = min(
-                range(len(current_lut)),
-                key=lambda r: abs(current_lut[r][speed_index][2] - mtpa_torque)
-            )
-            
-            # Extract Iq and Id from current_lut
-            iq, id, trq = current_lut[closest_row_index][speed_index]
+            # Initialize a list to track the last valid Iq and Id for each speed index
+            last_valid_values = [[0, 0, 0] for _ in speed_list]            
+
+            # Filter rows in current_lut that meet the torque threshold
+            filtered_rows = [
+                (r, current_lut[r][speed_index])  # Row index and corresponding cell
+                for r in range(len(current_lut))
+                if abs(current_lut[r][speed_index][2] - mtpa_torque) <= torque_threshold
+            ]
+
+            if filtered_rows:
+                # Extract Iq and Id from current_lut
+                iq, id, trq = filtered_rows[0][1]
+                # Update last valid values for this speed
+                last_valid_values[speed_index] = [iq, id, trq]
+
+            else:
+                # If no valid rows, use the last valid values for this speed
+                iq, id, trq = last_valid_values[speed_index]        
             
             # Fill the corresponding cell in mtpa_lut
             mtpa_lut[mtpa_row_index][speed_index] = [iq, id, trq]
@@ -792,7 +805,8 @@ def mtpa_gen(motor, app):
         iq_values = [row[speed_index][0] for row in mtpa_lut]
         id_values = [row[speed_index][1] for row in mtpa_lut]
         trq_values = [row[speed_index][2] for row in mtpa_lut]
-        
+        # if speed_index != 4:
+        #     continue
         # Plot with a unique color for each speed
         plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
         # plt.title(speed)
