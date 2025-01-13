@@ -1238,6 +1238,7 @@ lut = LUT(config)
 # Uncomment to show closed loop bode plots of q and d axes:
 # estimate_BW(control, app)
 
+# If direct torque command is desired, a LUT is required. Generate or upload.
 if (app.torque_command_flag):
     if (app.generate_lut):
         # Calculates this motor's MTPA LUT
