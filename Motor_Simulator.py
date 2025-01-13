@@ -49,8 +49,6 @@ class Config:
             inertia (float): Motor inertia [kg*m^2].
             visc_fric_coeff (float): Viscous friction coefficient [Nm*s/rad].
             i_max (float): Maximum motor current [A].
-            torque_max (float): Maximum torque at maximum current [Nm].
-            speed_max (float): Maximum speed [rad/sec].
             harmonics (dict): BEMF harmonics.
 
             # Simulation parameters
@@ -62,10 +60,15 @@ class Config:
                 - True: Speed is controlled externally (e.g., by a dynamometer).
                 - False: Speed is determined by torque and motor dynamics.
             commanded_speed (float): Final speed command [rad/sec].
+            torque_command_flag (bool): Decides whether to command torque using a lookup table generated based on motor parameters or commanding iq, id directly
+                - True: Command torque using a LUT.
+                - False: Command iq, id directly.
             commanded_iq (float): Final commanded q-axis current [A].
             commanded_id (float): Final commanded d-axis current [A].
+            commanded_torque (float): Final commanded torque command [Nm].
             acceleration (float): Acceleration [rad/sec^2]. Instantaneous if set to 0.
             current_ramp (float): Rate of change in current [A/sec].
+            torque_ramp (float): Rate of change in torque [Nm/sec].
             vbus (float): Supply voltage [V].
             init_speed (float): Initial speed [rad/sec].
             short_circuit (bool):
@@ -90,6 +93,12 @@ class Config:
                 - 0: Off   
                 - 1: On
 
+            # MTPA lookup table generator parameters
+            torque_max (float): Maximum torque at maximum current [Nm].
+            speed_max (float): Maximum speed [rad/sec].    
+            torque_increment (int): torque increment size in the mtpa table [Nm].
+            speed_increment (int): speed increment size in the mtpa table [rad/sec].
+
         '''
         # Motor parameters
         self.motor_type = "SYNC"
@@ -101,8 +110,6 @@ class Config:
         self.inertia = 0.01
         self.visc_fric_coeff = 0.005
         self.i_max = 750
-        self.torque_max = 72
-        self.speed_max = 7000 * (2 * np.pi / 60)
         # Harmonics, choose preferred option (Comment out the other):
         #   None for no bemf harmonics
         #   dictionary for desired harmonics
@@ -118,11 +125,14 @@ class Config:
 
         # Application parameters
         self.speed_control = True
-        self.commanded_speed = 100.0
-        self.commanded_iq = 200.0
+        self.commanded_speed = 100
+        self.torque_command_flag = False    # If you wish to command torque using a lut, set to True
+        self.commanded_iq = 200
         self.commanded_id = -50
-        self.acceleration = 10000.0
-        self.current_ramp = 10000.0
+        self.commanded_torque = 10
+        self.acceleration = 10000
+        self.current_ramp = 10000
+        self.torque_ramp = 1000
         self.vbus = 44.0
         self.init_speed = 0.0
         self.short_circuit = False
@@ -146,6 +156,12 @@ class Config:
         self.afc_harmonic = 6
         self.afc_method = 0
         self.decoupling_enabled = 0
+
+        # MTPA lookup table generator parameters
+        self.torque_max = 72
+        self.speed_max = 7000 * (2 * np.pi / 60)
+        self.torque_increment = 3
+        self.speed_increment = 350 * (2 * np.pi / 60)
 
 class Motor:
     def __init__(self, config):
@@ -181,8 +197,6 @@ class Motor:
         self.inertia = config.inertia
         self.visc_fric_coeff = config.visc_fric_coeff
         self.i_max = config.i_max
-        self.torque_max = config.torque_max
-        self.speed_max = config.speed_max
         
 
     def inductance_dq(self, iq, id):
@@ -275,10 +289,13 @@ class Application:
         '''
         self.speed_control = config.speed_control
         self.commanded_speed = config.commanded_speed
+        self.torque_command_flag = config.torque_command_flag
         self.commanded_iq = config.commanded_iq
         self.commanded_id = config.commanded_id
+        self.commanded_torque = config.commanded_torque
         self.acceleration = config.acceleration
         self.current_ramp = config.current_ramp
+        self.torque_ramp = config.torque_ramp
         self.vbus = config.vbus
         self.pi_v_lim = config.vbus * 0.75                 # Max allowed vq,vd outputs (Max allowed overmodulation).
         self.max_phase_v = config.vbus / 2                 # Max phase voltage
@@ -406,6 +423,225 @@ class MotorControl:
             self.vd *= volt_amp_gain
         else:
             self.saturation = 0        
+
+
+class LUT:
+    def __init__(self, config):
+        '''
+        Initializes lookup table generator related parameters:
+        '''            
+        self.torque_max = config.torque_max
+        self.speed_max = config.speed_max        
+        self.torque_increment = config.torque_increment
+        self.speed_increment = config.speed_increment
+        self.mtpa_lut = []
+
+
+    def mtpa_cost_func(self, x, curr, we, vmax, motor):
+        '''
+        Finds max torque within current and voltage constraints \n
+        Args:
+            x - angle [rad]
+            curr - Current amplitude [A]
+            we - Electrical speed [rad/sec]
+            vmax - Max allowed voltage amplitude [V]
+            torque_const - Torque constant [Nm/A]
+            Lq - Modified q axis inductance (Based on current) [uH]
+            Ld - Modified d axis inductance (Based on current) [uH]
+        Return:
+            cost
+        '''    
+        ang = x[0]
+        iq = curr * sin(ang)
+        id = -curr * cos(ang)
+        torque = abs(motor.pole_pairs * (3/2) * (motor.flux_linkage*iq + (motor.Ld - motor.Lq)*id*iq))
+        if (torque != 0):
+            cost = 1/torque
+        else:
+            cost = 1
+        
+        # Constraints:
+        # Iq > 0
+        if iq < 0:
+            cost *= 2 ** (1 - iq)
+
+        # Id < 0
+        if id > 0:
+            cost *= 2 ** (1 + id)
+        
+        # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
+        Vd = (motor.Rs*id - we*iq*motor.Lq)
+        Vq = (motor.Rs*iq + we*(id*motor.Ld + motor.bemf_const / motor.pole_pairs))        
+        VSize = np.sqrt(Vq**2 + Vd**2)
+        if (VSize > vmax):
+            cost *= 2 ** (1 + 10*(VSize/vmax))
+
+        return abs(cost)
+
+
+
+    def mtpa_gen(self, motor, app):
+        '''
+        Runs mtpa_cost_func() at all relevant points to get a LUT
+        Args:
+
+        motor class
+        app class
+
+        Return:
+            MTPA LUT (rows = desired torque, columns = speed, cells = [iq, id, actual torque])
+        '''      
+        torque_sensed_list = np.arange(0,self.torque_max + self.torque_increment, self.torque_increment)
+        speed_list = np.arange(0,self.speed_max + self.speed_increment, self.speed_increment)
+
+        current_list = np.linspace(0,motor.i_max, int(len(torque_sensed_list) * motor.i_max / self.torque_max))
+        vmax = app.vbus / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
+        
+        current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
+        self.mtpa_lut = [[[0, 0, 0] for _ in speed_list] for _ in torque_sensed_list]
+
+        # Finding accurate flux linkage according to motor datasheet.
+        # If max torque is unknown, don't update the flux linkage.    
+        motor.inductance_dq(motor.i_max, 0)
+        for iter in range(10):
+            res = minimize(self.mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, motor))
+            res_torque_max = 1/res.fun
+            motor.flux_linkage = motor.flux_linkage * (self.torque_max / res_torque_max)
+        
+        for curr_index in range(len(current_list)):   
+            motor.inductance_dq(current_list[curr_index], 0)     
+            x0 = np.linspace(np.pi / 50, np.pi/2, 5)
+            for speed_index in range(len(speed_list)):
+                elec_speed = speed_list[speed_index] * motor.pole_pairs
+                if speed_index > 0:
+                    id_min = (vmax/elec_speed - motor.bemf_const / motor.pole_pairs)/motor.Ld  # Minimal required Id current for PMSM
+                    if id_min < 0:
+                        if current_list[curr_index] < -id_min:
+                            current_lut[curr_index][speed_index] = [0, id_min, 0]
+                            continue
+
+                if curr_index > 0:                
+                    res = []
+                    cost = []
+                    for iter in range(5):                    
+                        res.append(minimize(self.mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], elec_speed, vmax, motor)))
+                        cost.append(res[iter].fun)
+                    
+                    abs_cost = [abs(ele) for ele in cost]
+                    min_cost = min(abs_cost)
+                    min_index = abs_cost.index(min_cost)
+
+                    angle = res[min_index].x[0]
+                    iq = current_list[curr_index] * sin(angle)    
+                    id = -current_list[curr_index] * cos(angle)
+                    current_lut[curr_index][speed_index] = [iq, id, 1/min_cost]
+                    x0 = np.linspace(angle / 5, angle, 5)
+
+        # Fill mtpa_lut with values from current_lut
+        torque_threshold = self.torque_increment / 10
+        for mtpa_row_index, mtpa_torque in enumerate(torque_sensed_list):
+            for speed_index in range(len(speed_list)):
+                # Initialize a list to track the last valid Iq and Id for each speed index
+                last_valid_values = [[0, 0, 0] for _ in speed_list]            
+
+                # Filter rows in current_lut that meet the torque threshold
+                filtered_rows = [
+                    (r, current_lut[r][speed_index])  # Row index and corresponding cell
+                    for r in range(len(current_lut))
+                    if abs(current_lut[r][speed_index][2] - mtpa_torque) <= torque_threshold
+                ]
+
+                if filtered_rows:
+                    # Extract Iq and Id from current_lut
+                    iq, id, trq = filtered_rows[0][1]
+                    # Update last valid values for this speed
+                    last_valid_values[speed_index] = [iq, id, trq]
+
+                else:
+                    # If no valid rows, use the last valid values for this speed
+                    iq, id, trq = last_valid_values[speed_index]        
+                
+                # Fill the corresponding cell in mtpa_lut
+                self.mtpa_lut[mtpa_row_index][speed_index] = [iq, id, trq]
+
+        # Create scatter plot for all speeds
+        plt.figure(figsize=(10, 8))
+
+        # Iterate through speeds and plot each speed's points
+        for speed_index, speed in enumerate(speed_list):
+            # Extract Id and Iq values for the current speed (column)
+            iq_values = [row[speed_index][0] for row in self.mtpa_lut]
+            id_values = [row[speed_index][1] for row in self.mtpa_lut]
+            trq_values = [row[speed_index][2] for row in self.mtpa_lut]
+
+            # Plot with a unique color for each speed
+            plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
+            # plt.title(speed)
+            # Add torque values as text annotations
+            for id_val, iq_val, torque_val in zip(id_values, iq_values, trq_values):
+                plt.text(id_val, iq_val, f"{torque_val:.1f} Nm", fontsize=9, ha='right', va='bottom')
+
+        # Label axes
+        plt.xlabel("Id (A)")
+        plt.ylabel("Iq (A)")
+        plt.title("Iq vs Id for All Speeds")
+        plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+        plt.axvline(0, color='black', linewidth=0.8, linestyle='--')
+
+        # Add legend and grid
+        plt.legend()
+        plt.grid(True)
+        plt.show()       
+
+
+    def bilinear_interpolation(self, torque, speed):
+        """
+        Perform bilinear interpolation to find Iq and Id at a given torque and speed.
+
+        Parameters:
+            torque_incr (float): Increment of torque between rows in the mtpa_lut.
+            speed_incr (float): Increment of speed between columns in the mtpa_lut.
+            torque (float): Target torque value.
+            speed (float): Target speed value.
+
+        Returns:
+            (float, float): Interpolated (Iq, Id) values.
+        """
+        # Find the indices and weights for torque
+        torque_index_low = int(torque // self.torque_increment)
+        torque_index_high = torque_index_low + 1
+        torque_weight_high = (torque - torque_index_low * self.torque_increment) / self.torque_increment
+        torque_weight_low = 1 - torque_weight_high
+
+        # Find the indices and weights for speed
+        speed_index_low = int(speed // self.speed_increment)
+        speed_index_high = speed_index_low + 1
+        speed_weight_high = (speed - speed_index_low * self.speed_increment) / self.speed_increment
+        speed_weight_low = 1 - speed_weight_high
+
+        # Retrieve the 4 surrounding points from the mtpa_lut
+        iq11, id11, _ = self.mtpa_lut[torque_index_low][speed_index_low]
+        iq12, id12, _ = self.mtpa_lut[torque_index_low][speed_index_high]
+        iq21, id21, _ = self.mtpa_lut[torque_index_high][speed_index_low]
+        iq22, id22, _ = self.mtpa_lut[torque_index_high][speed_index_high]
+
+        # Bilinear interpolation for Iq
+        iq_interp = (
+            iq11 * torque_weight_low * speed_weight_low +
+            iq12 * torque_weight_low * speed_weight_high +
+            iq21 * torque_weight_high * speed_weight_low +
+            iq22 * torque_weight_high * speed_weight_high
+        )
+
+        # Bilinear interpolation for Id
+        id_interp = (
+            id11 * torque_weight_low * speed_weight_low +
+            id12 * torque_weight_low * speed_weight_high +
+            id21 * torque_weight_high * speed_weight_low +
+            id22 * torque_weight_high * speed_weight_high
+        )
+
+        return iq_interp, id_interp        
 
 
 
@@ -673,159 +909,6 @@ def estimate_BW(control, app):
     plt.show()    
 
 
-def mtpa_cost_func(x, curr, we, vmax, motor):
-    '''
-    Finds max torque within current and voltage constraints \n
-    Args:
-        x - angle [rad]
-        curr - Current amplitude [A]
-        we - Electrical speed [rad/sec]
-        vmax - Max allowed voltage amplitude [V]
-        torque_const - Torque constant [Nm/A]
-        Lq - Modified q axis inductance (Based on current) [uH]
-        Ld - Modified d axis inductance (Based on current) [uH]
-    Return:
-        cost
-    '''    
-    ang = x[0]
-    iq = curr * sin(ang)
-    id = -curr * cos(ang)
-    torque = abs(motor.pole_pairs * (3/2) * (motor.flux_linkage*iq + (motor.Ld - motor.Lq)*id*iq))
-    if (torque != 0):
-        cost = 1/torque
-    else:
-        cost = 1
-    
-    # Constraints:
-    # Iq > 0
-    if iq < 0:
-        cost *= 2 ** (1 - iq)
-
-    # Id < 0
-    if id > 0:
-        cost *= 2 ** (1 + id)
-    
-    # Voltage amplitude constraint: sqrt(Vq^2 + Vd^2) < VBus
-    Vd = (motor.Rs*id - we*iq*motor.Lq)
-    Vq = (motor.Rs*iq + we*(id*motor.Ld + motor.bemf_const / motor.pole_pairs))        
-    VSize = np.sqrt(Vq**2 + Vd**2)
-    if (VSize > vmax):
-        cost *= 2 ** (1 + 10*(VSize/vmax))
-
-    return abs(cost)
-
-
-
-def mtpa_gen(motor, app):
-    '''
-    Runs mtpa_cost_func() at all relevant points to get a LUT
-    Args:
-
-    Return:
-        cost
-    '''      
-    torque_list = np.linspace(0,motor.torque_max, 20)
-    speed_list = np.linspace(0,motor.speed_max, 15)
-    current_list = np.linspace(0,motor.i_max, int(50 * motor.i_max / motor.torque_max))
-    vmax = app.vbus / np.sqrt(3)
-    
-    current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
-    mtpa_lut = [[[0, 0, 0] for _ in speed_list] for _ in torque_list]
-
-    # Finding accurate flux linkage according to motor datasheet.
-    # If max torque is unknown, don't update the flux linkage.    
-    motor.inductance_dq(motor.i_max, 0)
-    for iter in range(10):
-        res = minimize(mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, motor))
-        res_torque_max = 1/res.fun
-        motor.flux_linkage = motor.flux_linkage * (motor.torque_max / res_torque_max)
-    
-    for curr_index in range(len(current_list)):   
-        motor.inductance_dq(current_list[curr_index], 0)     
-        x0 = np.linspace(np.pi / 50, np.pi/2, 5)
-        for speed_index in range(len(speed_list)):
-            elec_speed = speed_list[speed_index] * motor.pole_pairs
-            if speed_index > 0:
-                id_min = (vmax/elec_speed - motor.bemf_const / motor.pole_pairs)/motor.Ld  # Minimal required Id current for PMSM
-                if id_min < 0:
-                    if current_list[curr_index] < -id_min:
-                        current_lut[curr_index][speed_index] = [0, id_min, 0]
-                        continue
-
-            if curr_index > 0:                
-                res = []
-                cost = []
-                for iter in range(5):                    
-                    res.append(minimize(mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], elec_speed, vmax, motor)))
-                    cost.append(res[iter].fun)
-                
-                abs_cost = [abs(ele) for ele in cost]
-                min_cost = min(abs_cost)
-                min_index = abs_cost.index(min_cost)
-
-                angle = res[min_index].x[0]
-                iq = current_list[curr_index] * sin(angle)    
-                id = -current_list[curr_index] * cos(angle)
-                current_lut[curr_index][speed_index] = [iq, id, 1/min_cost]
-                x0 = np.linspace(angle / 5, angle, 5)
-
-    # Fill mtpa_lut with values from current_lut
-    torque_threshold = motor.torque_max / 100
-    for mtpa_row_index, mtpa_torque in enumerate(torque_list):
-        for speed_index in range(len(speed_list)):
-            # Initialize a list to track the last valid Iq and Id for each speed index
-            last_valid_values = [[0, 0, 0] for _ in speed_list]            
-
-            # Filter rows in current_lut that meet the torque threshold
-            filtered_rows = [
-                (r, current_lut[r][speed_index])  # Row index and corresponding cell
-                for r in range(len(current_lut))
-                if abs(current_lut[r][speed_index][2] - mtpa_torque) <= torque_threshold
-            ]
-
-            if filtered_rows:
-                # Extract Iq and Id from current_lut
-                iq, id, trq = filtered_rows[0][1]
-                # Update last valid values for this speed
-                last_valid_values[speed_index] = [iq, id, trq]
-
-            else:
-                # If no valid rows, use the last valid values for this speed
-                iq, id, trq = last_valid_values[speed_index]        
-            
-            # Fill the corresponding cell in mtpa_lut
-            mtpa_lut[mtpa_row_index][speed_index] = [iq, id, trq]
-
-    # Create scatter plot for all speeds
-    plt.figure(figsize=(10, 8))
-
-    # Iterate through speeds and plot each speed's points
-    for speed_index, speed in enumerate(speed_list):
-        # Extract Id and Iq values for the current speed (column)
-        iq_values = [row[speed_index][0] for row in mtpa_lut]
-        id_values = [row[speed_index][1] for row in mtpa_lut]
-        trq_values = [row[speed_index][2] for row in mtpa_lut]
-        # if speed_index != 4:
-        #     continue
-        # Plot with a unique color for each speed
-        plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
-        # plt.title(speed)
-        # Add torque values as text annotations
-        for id_val, iq_val, torque_val in zip(id_values, iq_values, trq_values):
-            plt.text(id_val, iq_val, f"{torque_val:.1f} Nm", fontsize=9, ha='right', va='bottom')
-
-    # Label axes
-    plt.xlabel("Id (A)")
-    plt.ylabel("Iq (A)")
-    plt.title("Iq vs Id for All Speeds")
-    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
-    plt.axvline(0, color='black', linewidth=0.8, linestyle='--')
-
-    # Add legend and grid
-    plt.legend()
-    plt.grid(True)
-    plt.show()       
-
 
 # Lists for plotting:
 speed_list = []
@@ -842,7 +925,8 @@ pwm_list = []
 v_terminal = []
 bemf = []
 currents = []    
-torque_list = []
+torque_commanded_list = []
+torque_sensed_list = []
 angle_list = []
 dq_inductance_list = []
 self_inductance_list = []
@@ -855,7 +939,7 @@ afc_integrals = []
 afc_outputs = []
 decoupling_outputs = []
 
-def simulate_motor(motor, sim, app, control):
+def simulate_motor(motor, sim, app, control, lut):
     # Initializations
     speed_m = app.init_speed
     speed_e = speed_m * motor.pole_pairs
@@ -863,6 +947,7 @@ def simulate_motor(motor, sim, app, control):
     angle_e = 0
     iq_ramped = 0
     id_ramped = 0
+    torque_ramped = 0
     ia, ib, ic = 0, 0, 0
     torque = 0
 
@@ -874,21 +959,32 @@ def simulate_motor(motor, sim, app, control):
                 speed_m += app.acceleration * sim.time_step
             else:
                 speed_m = app.commanded_speed
-        else:
+
+        else:   # app.speed_control == False
             speed_m += ((torque - speed_m * motor.visc_fric_coeff) / motor.inertia) * sim.time_step
         speed_e = speed_m * motor.pole_pairs
         speed_list.append([speed_m, speed_e])
 
-        # Current ramps
-        if (abs(iq_ramped) < abs(app.commanded_iq)) and (app.current_ramp != 0):
-            iq_ramped += app.current_ramp * sim.time_step * np.sign(app.commanded_iq)
-        else:
-            iq_ramped = app.commanded_iq
+        # Torque/Current ramps
+        if (app.torque_command_flag):
+            if (abs(torque_ramped) < abs(app.commanded_torque)) and (app.torque_ramp != 0):
+                torque_ramped += app.torque_ramp * sim.time_step * np.sign(app.commanded_torque)
+            else:
+                torque_ramped = app.commanded_torque
+            iq_ramped, id_ramped = lut.bilinear_interpolation(torque_ramped, speed_m)
 
-        if (abs(id_ramped) < abs(app.commanded_id)) and (app.current_ramp != 0):
-            id_ramped += app.current_ramp * sim.time_step * np.sign(app.commanded_id)
-        else:
-            id_ramped = app.commanded_id        
+        else:   # app.torque_command_flag == False
+            if (abs(iq_ramped) < abs(app.commanded_iq)) and (app.current_ramp != 0):
+                iq_ramped += app.current_ramp * sim.time_step * np.sign(app.commanded_iq)
+            else:
+                iq_ramped = app.commanded_iq
+
+            if (abs(id_ramped) < abs(app.commanded_id)) and (app.current_ramp != 0):
+                id_ramped += app.current_ramp * sim.time_step * np.sign(app.commanded_id)
+            else:
+                id_ramped = app.commanded_id        
+
+        torque_commanded_list.append(torque_ramped)
         iqd_ramped_list.append([iq_ramped, id_ramped])
 
         # Convert abc frame currents to dq currents
@@ -946,7 +1042,7 @@ def simulate_motor(motor, sim, app, control):
 
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
-        if (app.short_circuit == False):# or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
+        if (app.short_circuit == False): # or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
             pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, app.vbus/2, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
         else:
             pwm_signals_top = [0, 0, 0]
@@ -985,8 +1081,8 @@ def simulate_motor(motor, sim, app, control):
         ia, ib, ic = sol.y[:, -1]
         currents.append([ia, ib, ic])        
 
-        torque = motor.torque(iq_sensed, id_sensed)
-        torque_list.append(torque)
+        torque_sensed = motor.torque(iq_sensed, id_sensed)
+        torque_sensed_list.append(torque_sensed)
 
         angle_m += speed_m * sim.time_step
         angle_e += speed_e * sim.time_step
@@ -998,15 +1094,18 @@ motor = Motor(config)
 sim = Simulation(config)
 app = Application(config)
 control = MotorControl(config)
+lut = LUT(config)
 
 # Uncomment to show closed loop bode plots of q and d axes:
 # estimate_BW(control, app)
 
-# Calculates this motor's MTPA LUT
-# mtpa_gen(motor, app)
+if (app.torque_command_flag):
+    # Calculates this motor's MTPA LUT
+    lut.mtpa_gen(motor, app)
 
 # Run the simulation
-simulate_motor(motor, sim, app, control)
+simulate_motor(motor, sim, app, control, lut)
+
 
 # Plot results
 time_points = sim.time_points
@@ -1024,7 +1123,8 @@ pwm_list = np.array(pwm_list)
 v_terminal = np.array(v_terminal)
 bemf = np.array(bemf)
 currents = np.array(currents)
-torque = np.array(torque_list)
+torque_commanded_list = np.array(torque_commanded_list)
+torque_sensed_list = np.array(torque_sensed_list)
 angle_list = np.array(angle_list)
 dq_inductance_list = np.array(dq_inductance_list)
 self_inductance_list = np.array(self_inductance_list)
@@ -1072,7 +1172,8 @@ data = {
     "ia": currents[:, 0],
     "ib": currents[:, 1],    
     "ic": currents[:, 2],
-    "torque": torque,
+    "torque_commanded": torque_commanded_list,
+    "torque_sensed": torque_sensed_list,
     "angle_m": angle_list[:, 0],
     "angle_e": angle_list[:, 1],    
     "Lq": dq_inductance_list[:, 0],
@@ -1131,8 +1232,8 @@ plot_options = {
     "ib": 3,
     "ic": 3,
     "bemf_a": 4,
-    "bemf_b": 4,
-    "bemf_c": 4,    
+    "bemf_b": 4,  
+    "bemf_c": 4,  
 }
 
 
