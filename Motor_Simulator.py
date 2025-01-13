@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 8th, 2025
-Version: 2.0
+Date: January 13th, 2025
+Version: 3.0
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -133,7 +133,7 @@ class Config:
         self.generate_lut = True
         self.speed_control = True
         self.commanded_speed = 100
-        self.torque_command_flag = True    # If you wish to command torque using a lut, set to True
+        self.torque_command_flag = False    # If you wish to command torque using a lut, set to True
         self.commanded_iq = 200
         self.commanded_id = -50
         self.commanded_torque = 10
@@ -1379,8 +1379,6 @@ plot_options = {
     "bemf_a": 4,
     "bemf_b": 4,  
     "bemf_c": 4,  
-    "torque_commanded": 5,
-    "torque_sensed": 5,
 }
 
 
