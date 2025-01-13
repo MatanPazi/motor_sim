@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 8th, 2025
-Version: 2.0
+Date: January 13th, 2025
+Version: 3.0
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -30,6 +30,9 @@ from scipy.integrate import solve_ivp
 import control as ctrl
 from scipy.optimize import minimize
 from math import sin, cos, radians, sqrt
+import tkinter as tk
+from tkinter import filedialog, scrolledtext
+import re
 
 class Config:
     def __init__(self):
@@ -56,6 +59,9 @@ class Config:
             total_time (float): Total simulation time [sec]            
 
             # Application parameters
+            generate_lut (bool): 
+                - True: Auto generate an MTPA lut.
+                - False: Load a text file with iq and id look up tables.            
             speed_control (bool): 
                 - True: Speed is controlled externally (e.g., by a dynamometer).
                 - False: Speed is determined by torque and motor dynamics.
@@ -124,6 +130,7 @@ class Config:
         self.total_time = 0.05
 
         # Application parameters
+        self.generate_lut = False
         self.speed_control = True
         self.commanded_speed = 100
         self.torque_command_flag = False    # If you wish to command torque using a lut, set to True
@@ -287,6 +294,7 @@ class Application:
         '''
         Initializes application-related parameters:
         '''
+        self.generate_lut = config.generate_lut
         self.speed_control = config.speed_control
         self.commanded_speed = config.commanded_speed
         self.torque_command_flag = config.torque_command_flag
@@ -491,14 +499,14 @@ class LUT:
         Return:
             MTPA LUT (rows = desired torque, columns = speed, cells = [iq, id, actual torque])
         '''      
-        torque_sensed_list = np.arange(0,self.torque_max + self.torque_increment, self.torque_increment)
+        torque_list = np.arange(0,self.torque_max + self.torque_increment, self.torque_increment)
         speed_list = np.arange(0,self.speed_max + self.speed_increment, self.speed_increment)
 
-        current_list = np.linspace(0,motor.i_max, int(len(torque_sensed_list) * motor.i_max / self.torque_max))
+        current_list = np.linspace(0,motor.i_max, int(len(torque_list) * motor.i_max / self.torque_max))
         vmax = app.vbus / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
         
         current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
-        self.mtpa_lut = [[[0, 0, 0] for _ in speed_list] for _ in torque_sensed_list]
+        self.mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
 
         # Finding accurate flux linkage according to motor datasheet.
         # If max torque is unknown, don't update the flux linkage.    
@@ -539,7 +547,7 @@ class LUT:
 
         # Fill mtpa_lut with values from current_lut
         torque_threshold = self.torque_increment / 10
-        for mtpa_row_index, mtpa_torque in enumerate(torque_sensed_list):
+        for mtpa_row_index, mtpa_torque in enumerate(torque_list):
             for speed_index in range(len(speed_list)):
                 # Initialize a list to track the last valid Iq and Id for each speed index
                 last_valid_values = [[0, 0, 0] for _ in speed_list]            
@@ -562,7 +570,7 @@ class LUT:
                     iq, id, trq = last_valid_values[speed_index]        
                 
                 # Fill the corresponding cell in mtpa_lut
-                self.mtpa_lut[mtpa_row_index][speed_index] = [iq, id, trq]
+                self.mtpa_lut[mtpa_row_index][speed_index] = [iq, id]
 
         # Create scatter plot for all speeds
         plt.figure(figsize=(10, 8))
@@ -578,7 +586,7 @@ class LUT:
             plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
             # plt.title(speed)
             # Add torque values as text annotations
-            for id_val, iq_val, torque_val in zip(id_values, iq_values, trq_values):
+            for id_val, iq_val, torque_val in zip(id_values, iq_values, torque_list):
                 plt.text(id_val, iq_val, f"{torque_val:.1f} Nm", fontsize=9, ha='right', va='bottom')
 
         # Label axes
@@ -620,10 +628,10 @@ class LUT:
         speed_weight_low = 1 - speed_weight_high
 
         # Retrieve the 4 surrounding points from the mtpa_lut
-        iq11, id11, _ = self.mtpa_lut[torque_index_low][speed_index_low]
-        iq12, id12, _ = self.mtpa_lut[torque_index_low][speed_index_high]
-        iq21, id21, _ = self.mtpa_lut[torque_index_high][speed_index_low]
-        iq22, id22, _ = self.mtpa_lut[torque_index_high][speed_index_high]
+        iq11, id11 = self.mtpa_lut[torque_index_low][speed_index_low]
+        iq12, id12 = self.mtpa_lut[torque_index_low][speed_index_high]
+        iq21, id21 = self.mtpa_lut[torque_index_high][speed_index_low]
+        iq22, id22 = self.mtpa_lut[torque_index_high][speed_index_high]
 
         # Bilinear interpolation for Iq
         iq_interp = (
@@ -910,6 +918,138 @@ def estimate_BW(control, app):
 
 
 
+
+
+def extract_iq_id_tables():
+    """
+    Main function to extract IQ and ID tables from a text file.
+
+    This function opens a GUI for file selection, processes the selected file,
+    and extracts two 2D arrays representing IQ and ID tables.
+
+    Returns:
+    tuple: A tuple containing two numpy arrays (iq_table, id_table).
+           Returns (None, None) if no valid arrays are found.
+    """    
+    tables = []
+    result_window = None
+
+    def browse_file():
+        """
+        Opens a file dialog for the user to select a text file.
+
+        This function is called when the "Browse File" button is clicked in the GUI.
+        It opens a file dialog and calls process_file() if a file is selected.
+        """
+        nonlocal tables, result_window
+        file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if file_path:
+            tables = process_file(file_path)
+            root.quit()
+
+    def process_file(file_path):
+        """
+        Processes the selected file and extracts IQ and ID tables.
+
+        This function reads the content of the file, removes C-style and python style comments,
+        Finds all the standalone numbers converts them to arrays, and displays them in a formatted manner in a new window.
+
+        Args:
+        file_path (str): The path to the selected file.
+
+        Side effects:
+        - Creates a new window to display the extracted arrays.
+        - Closes the main GUI window after processing.
+        """        
+        with open(file_path, 'r') as file:
+            content = file.read()
+
+        # Remove C-style multi-line comments
+        content = re.sub(r'/\*[\s\S]*?\*/', '', content)
+        
+        # Remove C-style single-line comments and Python-style comments
+        content = re.sub(r'//.*|#.*', '', content)
+
+        # Find all standalone numbers in the file
+        numbers = re.findall(r'\b-?\d+(?:\.\d+)?\b', content)
+        
+        # Convert to float (or int if possible)
+        numbers = [int(x) if x.isdigit() else float(x) for x in numbers]
+        
+        # Determine the number of columns (assume it's the length of the first row)
+        lines = content.split('\n')
+        num_cols = 0
+        for line in lines:
+            nums_in_line = re.findall(r'\b-?\d+(?:\.\d+)?\b', line)
+            if nums_in_line:
+                num_cols = len(nums_in_line)
+                break
+        
+        if num_cols == 0:
+            return []  # No valid data found
+
+        # Reshape the list into a 2D array
+        num_rows = len(numbers) // num_cols
+        table = np.array(numbers[:num_rows*num_cols]).reshape(num_rows, num_cols)
+
+        # Split into two tables if there's an even number of rows
+        if num_rows % 2 == 0:
+            mid = num_rows // 2
+            tables = [table[:mid], table[mid:]]
+        else:
+            tables = [table]
+
+        display_results(tables)
+        return tables
+
+    def display_results(tables):
+        """
+        Display the extracted numeric tables in a new window.
+
+        This function creates a new Tkinter window to show the contents of the
+        extracted tables. Each table is displayed separately with its rows and
+        columns preserved.
+
+        Parameters:
+        tables (list of numpy.ndarray): A list containing one or two 2D numpy arrays
+                                        representing the extracted numeric tables.
+        """        
+        nonlocal result_window
+        result_window = tk.Toplevel(root)
+        result_window.title("Extracted Arrays")
+        result_window.geometry("800x600")
+
+        text_widget = scrolledtext.ScrolledText(result_window, wrap=tk.NONE)
+        text_widget.pack(expand=True, fill='both')
+
+        for i, table in enumerate(tables):
+            text_widget.insert(tk.END, f"Array {i+1}:\n")
+            for row in table:
+                text_widget.insert(tk.END, " ".join(f"{val:8g}" for val in row) + "\n")
+            text_widget.insert(tk.END, f"\nThis array has been assigned to 'table_{i+1}'\n\n")
+
+        text_widget.config(state=tk.DISABLED)
+
+    root = tk.Tk()
+    root.title("Array Extractor")
+    root.geometry("400x150")
+
+    label = tk.Label(root, text="Please choose a text file with numeric data")
+    label.pack(pady=10)
+
+    browse_button = tk.Button(root, text="Browse File", command=browse_file)
+    browse_button.pack(pady=10)
+
+    root.mainloop()
+    
+    if result_window:
+        root.wait_window(result_window)
+    
+    root.destroy()
+
+    return tables if tables else [None, None]
+
+
 # Lists for plotting:
 speed_list = []
 iqd_ramped_list = []
@@ -1100,8 +1240,14 @@ lut = LUT(config)
 # estimate_BW(control, app)
 
 if (app.torque_command_flag):
-    # Calculates this motor's MTPA LUT
-    lut.mtpa_gen(motor, app)
+    if (app.generate_lut):
+        # Calculates this motor's MTPA LUT
+        lut.mtpa_gen(motor, app)
+    else:
+        # Upload LUTs from text file
+        iq_table, id_table = extract_iq_id_tables()
+        lut.mtpa_lut = np.stack((iq_table, -id_table), axis=-1) / 10
+
 
 # Run the simulation
 simulate_motor(motor, sim, app, control, lut)
