@@ -9,6 +9,10 @@ This repository contains a Python-based motor simulator designed to aid in contr
 - Accounts for dead-time and switching behavior
 - Supports back-emf harmonics
 - Allows the simulation of short-circuiting all phases
+- Supports MTPA (Maximum torque per ampere) LUT (Lookup table) generation based on motor parameters
+- Supports loading external MTPA LUTs
+- Supports AFC (Adaptive feed forward cancellation) control for harmonic attenuation
+- Supports decoupling
 
 ## How It Works
 
@@ -26,38 +30,45 @@ And the user can plot anything they wish:
 
 ## Usage
 
-Modify parameters by directly adjusting the class initialization in the script:
+Modify parameters by directly adjusting the config class initialization in the script:
 
 ```python
-class Motor:
-    def __init__(self, motor_type="SYNC", pole_pairs=4, Rs=0.0029, Lq_base=0.0000685, Ld_base=0.0000435,
-                 bemf_const=0.1, inertia=0.0091, visc_fric_coeff=0.005, i_max = 600):
+class Config:
+    def __init__(self):
+        '''
+        Initializes all script parameters:
 
-class MotorControl:
-    def __init__(self, Kp_d=0.2, Ki_d=50.0, Kp_q=0.2, Ki_q=50.0, sampling_time=62.5e-6, dead_time = 300e-9):
-
-class Application:
-    def __init__(self, speed_control=True, commanded_speed=10.0, commanded_iq=10.0, commanded_id=0.0,
-                 acceleration=10000.0, current_ramp=10000.0, vBus = 48, init_speed = 0, short_circuit = False):
-
-class Simulation:
-    def __init__(self, time_step=100e-9, total_time=0.002):
+        Args:
+        ...
 ```
 Parameter units and explanations are in the script.
 
 ## Running the simulation, example:
 ```
 # Instantiate objects
-motor = Motor()
-sim = Simulation()
-app = Application()
-control = MotorControl()
+config = Config()
+motor = Motor(config)
+sim = Simulation(config)
+app = Application(config)
+control = MotorControl(config)
+lut = LUT(config)
 
 # Uncomment to show closed loop bode plots of q and d axes:
-# estimate_BW()
+# estimate_BW(control, app)
+
+# If direct torque command is desired, a LUT is required. Generate or upload.
+if (app.torque_command_flag):
+    if (app.generate_lut):
+        # Calculates this motor's MTPA LUT
+        lut.mtpa_gen(motor, app)
+    else:
+        # Upload LUTs from text file
+        iq_table, id_table = extract_iq_id_tables()
+        lut.mtpa_lut = np.stack((iq_table, -id_table), axis=-1) / 10
+
 
 # Run the simulation
-simulate_motor(motor, sim, app, control)
+simulate_motor(motor, sim, app, control, lut)
 
 # Plot results
 ...
@@ -77,6 +88,9 @@ This project requires the following Python modules:
 - matplotlib
 - numpy
 - tqdm: https://tqdm.github.io/
+- re
+- tkinter
+- math
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
