@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 13th, 2025
-Version: 3.0
+Date: January 8th, 2025
+Version: 2.0
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -130,10 +130,10 @@ class Config:
         self.total_time = 0.05
 
         # Application parameters
-        self.generate_lut = False
+        self.generate_lut = True
         self.speed_control = True
         self.commanded_speed = 100
-        self.torque_command_flag = False    # If you wish to command torque using a lut, set to True
+        self.torque_command_flag = True    # If you wish to command torque using a lut, set to True
         self.commanded_iq = 200
         self.commanded_id = -50
         self.commanded_torque = 10
@@ -580,7 +580,6 @@ class LUT:
             # Extract Id and Iq values for the current speed (column)
             iq_values = [row[speed_index][0] for row in self.mtpa_lut]
             id_values = [row[speed_index][1] for row in self.mtpa_lut]
-            trq_values = [row[speed_index][2] for row in self.mtpa_lut]
 
             # Plot with a unique color for each speed
             plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
@@ -1380,6 +1379,8 @@ plot_options = {
     "bemf_a": 4,
     "bemf_b": 4,  
     "bemf_c": 4,  
+    "torque_commanded": 5,
+    "torque_sensed": 5,
 }
 
 
