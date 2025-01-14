@@ -373,6 +373,13 @@ class MotorControl:
         # Update voltages evey sampling time step
         self.pi_integral_out_q += self.ki_q * error_iq * self.sampling_time
         self.pi_integral_out_d += self.ki_d * error_id * self.sampling_time
+
+        # Clamping
+        if abs(self.pi_integral_out_q) > self.pi_v_lim:
+            self.pi_integral_out_q = self.pi_v_lim * np.sign(self.pi_integral_out_q)
+        if abs(self.pi_integral_out_d) > self.pi_v_lim:
+            self.pi_integral_out_d = self.pi_v_lim * np.sign(self.pi_integral_out_d)
+
         self.pi_proportional_out_q = self.kp_q * error_iq
         self.pi_proportional_out_d = self.kp_d * error_id
         self.pi_vq = self.pi_proportional_out_q + self.pi_integral_out_q        
