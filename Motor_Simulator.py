@@ -98,6 +98,9 @@ class Config:
             decoupling_enabled (bool):
                 - 0: Off   
                 - 1: On
+            mod_speed_threshold (float): Voltage amplitude above which modified speed protection takes effect [V]
+            mod_speed_kp (n/a): modified speed proportional gain
+            mod_speed_ki (n/a): modified speed integral gain
 
             # MTPA lookup table generator parameters
             torque_max (float): Maximum torque at maximum current [Nm].
@@ -132,7 +135,7 @@ class Config:
         # Application parameters
         self.generate_lut = True
         self.speed_control = True
-        self.commanded_speed = 100
+        self.commanded_speed = 1000 * (2 * np.pi / 60)
         self.torque_command_flag = False    # If you wish to command torque using a lut, set to True
         self.commanded_iq = 200
         self.commanded_id = -50
@@ -163,6 +166,9 @@ class Config:
         self.afc_harmonic = 6
         self.afc_method = 0
         self.decoupling_enabled = 0
+        self.mod_speed_threshold = self.vbus / np.sqrt(3)     # see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.mod_speed_kp = 20000
+        self.mod_speed_ki = 5000
 
         # MTPA lookup table generator parameters
         self.torque_max = 72
@@ -304,9 +310,7 @@ class Application:
         self.acceleration = config.acceleration
         self.current_ramp = config.current_ramp
         self.torque_ramp = config.torque_ramp
-        self.vbus = config.vbus
-        self.pi_v_lim = config.vbus * 0.75                 # Max allowed vq,vd outputs (Max allowed overmodulation).
-        self.max_phase_v = config.vbus / 2                 # Max phase voltage
+        self.vbus = config.vbus        
         self.init_speed = config.init_speed
         self.short_circuit = config.short_circuit
 
@@ -321,17 +325,19 @@ class MotorControl:
         self.ki_q = config.k_pwm * config.ki_q / config.k_shifting / config.sampling_time
         self.vd = 0
         self.vq = 0
+        self.vs = 0
+        self.pi_v_lim = config.vbus * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.max_phase_v = config.vbus / 2                 # Max phase voltage
         self.sampling_time = config.sampling_time
         self.half_sampling_time = config.sampling_time / 2
         self.pi_integral_out_q = 0
         self.pi_integral_out_d = 0
         self.pi_proportional_out_q = 0
         self.pi_proportional_out_d = 0
-        self.pi_vq = 0
-        self.pi_vd = 0        
+        self.pi_vq = 0                  # [V]
+        self.pi_vd = 0                  # [V]        
         self.last_update_time = 0
         self.dead_time = config.dead_time
-        self.saturation = 0
         self.mod_fact = 2 / np.sqrt(3)
         self.afc_ki_d = config.k_pwm * config.afc_ki_d / config.k_shifting
         self.afc_ki_q = config.k_pwm * config.afc_ki_q / config.k_shifting
@@ -348,6 +354,12 @@ class MotorControl:
         self.decoupling_vq = 0
         self.decoupling_vd = 0
         self.decoupling_enabled = config.decoupling_enabled
+        self.mod_speed_threshold = config.mod_speed_threshold
+        self.mod_speed_kp = config.mod_speed_kp / config.k_shifting
+        self.mod_speed_ki = config.mod_speed_ki / config.k_shifting / config.sampling_time
+        self.mod_speed_integral_out = 0
+        self.mod_speed_proportional_out = 0
+        self.mod_speed_out = 0          # [rad/sec]
 
 
     def pi_control(self, error_iq, error_id):
@@ -359,12 +371,18 @@ class MotorControl:
             error_id (float): id error (ref - sensed) [A].
         """
         # Update voltages evey sampling time step
-        self.pi_integral_out_q += self.ki_q * error_iq * self.sampling_time * (1 - self.saturation)
-        self.pi_integral_out_d += self.ki_d * error_id * self.sampling_time * (1 - self.saturation)            
+        self.pi_integral_out_q += self.ki_q * error_iq * self.sampling_time
+        self.pi_integral_out_d += self.ki_d * error_id * self.sampling_time
         self.pi_proportional_out_q = self.kp_q * error_iq
         self.pi_proportional_out_d = self.kp_d * error_id
-        self.pi_vq = self.pi_proportional_out_q + self.pi_integral_out_q
-        self.pi_vd = self.pi_proportional_out_d + self.pi_integral_out_d        
+        self.pi_vq = self.pi_proportional_out_q + self.pi_integral_out_q        
+        self.pi_vd = self.pi_proportional_out_d + self.pi_integral_out_d
+        
+        # Limiting each axis independently, though limiting the vs amplitude would be more correct..
+        if abs(self.pi_vq) > self.pi_v_lim:
+            self.pi_vq = self.pi_v_lim * np.sign(self.pi_vq)
+        if abs(self.pi_vd) > self.pi_v_lim:
+            self.pi_vd = self.pi_v_lim * np.sign(self.pi_vd)
     
     def afc_control(self, error_iq, error_id, angle):    
         '''
@@ -411,26 +429,26 @@ class MotorControl:
             self.decoupling_vq = speed * (bemf_const + Ld * id)
             self.decoupling_vd = -speed * Lq * iq
 
-
-
-    def voltage_limiter(self, pi_v_lim):
+    def modified_speed(self, speed_max, torque_command_flag):
         '''
-        Voltage limiter:
+        Modifies the speed that's used in the MTPA LUT based on the voltage amplitude. \n
+        If the voltage amplitude exceeds a threshold, the speed is artificially increased resulting in a lower voltage amplitude for the same or lower torque.
+        Relevant only when commanding torque using a LUT.
 
         Args:
-            pi_v_lim (float): Max allowed vq,vd outputs (Max allowed overmodulation) [V].
-        '''        
-        v_amp_sqr = self.vq**2 + self.vd**2
-        # Saturation handling (Clamping)
-        if (v_amp_sqr > pi_v_lim**2):
-            # Clamp integrals
-            self.saturation = 1
-            # Prevent exceeding max vs
-            volt_amp_gain = pi_v_lim / np.sqrt(v_amp_sqr)                
-            self.vq *= volt_amp_gain
-            self.vd *= volt_amp_gain
-        else:
-            self.saturation = 0        
+
+        '''
+        if torque_command_flag:
+            vs_err = self.vs - self.mod_speed_threshold
+
+            self.mod_speed_integral_out += self.mod_speed_ki * vs_err * self.sampling_time
+            self.mod_speed_integral_out = max(0, self.mod_speed_integral_out)                       # Prevent integral from becoming negative
+
+            self.mod_speed_proportional_out = max(0, self.mod_speed_kp * vs_err)                    # Prevent the proportional output from becoming negative
+            self.mod_speed_out = self.mod_speed_proportional_out + self.mod_speed_integral_out  
+            
+            if self.mod_speed_out > speed_max:
+                self.mod_speed_out = speed_max                
 
 
 class LUT:
@@ -1074,9 +1092,14 @@ self_inductance_dot_list = []
 mutual_inductance_dot_list = []
 phase_volt_diff = []
 phase_volt_diff_sine_mod = []
+voltage_amplitude = []
 afc_integrals = []
 afc_outputs = []
 decoupling_outputs = []
+mod_speed_integral = []
+mod_speed_proportional = []
+mod_speed_output = []
+
 
 def simulate_motor(motor, sim, app, control, lut):
     # Initializations
@@ -1110,7 +1133,7 @@ def simulate_motor(motor, sim, app, control, lut):
                 torque_ramped += app.torque_ramp * sim.time_step * np.sign(app.commanded_torque)
             else:
                 torque_ramped = app.commanded_torque
-            iq_ramped, id_ramped = lut.bilinear_interpolation(torque_ramped, speed_m)
+            iq_ramped, id_ramped = lut.bilinear_interpolation(torque_ramped, min(lut.speed_max, speed_m + control.mod_speed_out))
 
         else:   # app.torque_command_flag == False
             if (abs(iq_ramped) < abs(app.commanded_iq)) and (app.current_ramp != 0):
@@ -1146,11 +1169,13 @@ def simulate_motor(motor, sim, app, control, lut):
             # Decoupling
             control.decoupling(iq_ramped, id_ramped, speed_e, motor.flux_linkage, motor.Ld, motor.Lq)
 
-            # Voltage limiter
-            control.voltage_limiter(app.pi_v_lim)            
-
             control.vq = control.pi_vq + control.afc_vq + control.decoupling_vq
             control.vd = control.pi_vd + control.afc_vd + control.decoupling_vd
+            control.vs = np.sqrt(control.vd ** 2 + control.vq ** 2)
+
+            # Modified speed protection
+            control.modified_speed(lut.speed_max, app.torque_command_flag)
+
             control.last_update_time = t      
                     
         vqd_list.append([control.vq, control.vd])
@@ -1160,20 +1185,24 @@ def simulate_motor(motor, sim, app, control, lut):
         afc_integrals.append([control.afc_sin_integral_error_d, control.afc_sin_integral_error_q, control.afc_cos_integral_error_d, control.afc_cos_integral_error_q])
         afc_outputs.append([control.afc_vq, control.afc_vd, control.afc_iq, control.afc_id])        
         decoupling_outputs.append([control.decoupling_vq, control.decoupling_vd])
+        voltage_amplitude.append([control.vs])
+        mod_speed_integral.append([control.mod_speed_integral_out])
+        mod_speed_proportional.append([control.mod_speed_proportional_out])
+        mod_speed_output.append([control.mod_speed_out])
         
         # Convert Vdq voltages to abc frame
         va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped = inverse_dq_transform(control.vq, control.vd, angle_e)
 
-        va_sineMod = max(min(va_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
-        vb_sineMod = max(min(vb_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
-        vc_sineMod = max(min(vc_sineMod_unclipped, app.max_phase_v), -app.max_phase_v)
+        va_sineMod = max(min(va_sineMod_unclipped, control.max_phase_v), -control.max_phase_v)
+        vb_sineMod = max(min(vb_sineMod_unclipped, control.max_phase_v), -control.max_phase_v)
+        vc_sineMod = max(min(vc_sineMod_unclipped, control.max_phase_v), -control.max_phase_v)
         vabc_sine_mod_list.append([va_sineMod, vb_sineMod, vc_sineMod])
         
         # Add third harmonic approx. to sinusoidal modulation.
         va_unclipped, vb_unclipped, vc_unclipped = third_harmonic(va_sineMod_unclipped, vb_sineMod_unclipped, vc_sineMod_unclipped, control.mod_fact)
-        va = max(min(va_unclipped, app.max_phase_v), -app.max_phase_v)
-        vb = max(min(vb_unclipped, app.max_phase_v), -app.max_phase_v)
-        vc = max(min(vc_unclipped, app.max_phase_v), -app.max_phase_v)        
+        va = max(min(va_unclipped, control.max_phase_v), -control.max_phase_v)
+        vb = max(min(vb_unclipped, control.max_phase_v), -control.max_phase_v)
+        vc = max(min(vc_unclipped, control.max_phase_v), -control.max_phase_v)        
         vabc_list.append([va, vb, vc])
 
         phase_volt_diff.append([va-vb, vb-vc, vc-va])
@@ -1279,11 +1308,16 @@ self_inductance_dot_list = np.array(self_inductance_dot_list)
 mutual_inductance_dot_list = np.array(mutual_inductance_dot_list)
 phase_volt_diff = np.array(phase_volt_diff)
 phase_volt_diff_sine_mod = np.array(phase_volt_diff_sine_mod)
-voltage_amplitude = np.sqrt(vqd_list[:, 0]**2 + vqd_list[:, 1]**2)
+voltage_amplitude = np.array(voltage_amplitude)
 voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
 afc_integrals = np.array(afc_integrals)
 afc_outputs = np.array(afc_outputs)
 decoupling_outputs = np.array(decoupling_outputs)
+mod_speed_integral = np.array(mod_speed_integral)
+mod_speed_proportional = np.array(mod_speed_proportional)
+mod_speed_output = np.array(mod_speed_output)
+
+
 
 # Plotting data dictionary. Contains all available variables to plot.
 data = {
@@ -1360,6 +1394,9 @@ data = {
     "pi_integral_d": pi_integral[:, 1],
     "pi_proportional_q": pi_proportional[:, 0],
     "pi_proportional_d": pi_proportional[:, 1],
+    "mod_speed_integral": mod_speed_integral,
+    "mod_speed_proportional": mod_speed_proportional,
+    "mod_speed_output": mod_speed_output,
 }
 
 
@@ -1377,7 +1414,7 @@ plot_options = {
     "ia": 3,
     "ib": 3,
     "ic": 3,
-    "bemf_a": 4,
+    "bemf_a": 4,  
     "bemf_b": 4,  
     "bemf_c": 4,  
 }
