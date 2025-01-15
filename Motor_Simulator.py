@@ -2,7 +2,7 @@
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
 Date: January 15th, 2025
-Version: 3.1
+Version: 3.2
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -82,7 +82,7 @@ class Config:
                 - False: Normal operation.
             battery_capacity (float): Battery capacity [Ah].
             battery_max_voltage (float): Battery max voltage [V]
-            battery_internal_resistance (float): Battery internal resistance [Ohm]. Taken as an estimate from the discharge curves.
+            battery_internal_resistance (float): Battery internal resistance [Ohm]. Taken as an estimate from the discharge curves. Includes the total # of cells in parallel and series.
 
             # Control parameters
             Kp (n/a): current loop proportional gain
@@ -110,6 +110,9 @@ class Config:
             speed_max (float): Maximum speed [rad/sec].    
             torque_increment (int): torque increment size in the mtpa table [Nm].
             speed_increment (int): speed increment size in the mtpa table [rad/sec].
+
+            # Low pass filter parameters
+            phase_current_cutoff_freq (float): filter cutoff frequency
 
         '''
         # Motor parameters
@@ -151,7 +154,7 @@ class Config:
         self.short_circuit = False
         self.battery_capacity = 40
         self.battery_max_voltage = 58.8
-        self.battery_internal_resistance = 0.001
+        self.battery_internal_resistance = 0.01
 
         # Control parameters
         self.kp_d = 70000
@@ -181,6 +184,9 @@ class Config:
         self.speed_max = 7000 * (2 * np.pi / 60)
         self.torque_increment = 3
         self.speed_increment = 350 * (2 * np.pi / 60)
+
+        # Low pass filter parameters
+        self.phase_current_cutoff_freq = 5000
 
 class Motor:
     def __init__(self, config):
@@ -265,8 +271,8 @@ class Motor:
         Args:
             angle (float): electrical angle [rad].
             phase_shift (float): phase shift between the phases [rad].
-        
         Returns:
+        
             bemf (float): bemf of phase at current angle [V]
         """          
         bemf = self.bemf_const * np.cos(angle + phase_shift)
@@ -641,14 +647,14 @@ class LUT:
         """
         Perform bilinear interpolation to find Iq and Id at a given torque and speed.
 
-        Parameters:
+        Args:
             torque_incr (float): Increment of torque between rows in the mtpa_lut.
             speed_incr (float): Increment of speed between columns in the mtpa_lut.
             torque (float): Target torque value.
             speed (float): Target speed value.
 
         Returns:
-            (float, float): Interpolated (Iq, Id) values.
+            iq_interp, id_interp (float, float): Interpolated Iq, Id values.
         """
         # Find the indices and weights for torque
         torque_index_low = int(torque // self.torque_increment)
@@ -686,6 +692,34 @@ class LUT:
 
         return iq_interp, id_interp        
 
+
+class LowPassFilter:
+    def __init__(self, dt, cutoff_frequency):
+        """
+        Initialize the low-pass filter.
+        
+        Args:
+            cutoff_frequency (float): The cutoff frequency of the filter [Hz].
+            sampling_rate (float): The sampling rate of the input signal [Hz].
+        """
+        # Calculate the filter coefficient (exponential smoothing factor)
+        self.alpha = dt / (dt + 1 / (2 * np.pi * cutoff_frequency))
+        self.prev_output = 0  # Initialize the previous output value
+
+    def filter(self, input_value):
+        """
+        Apply the low-pass filter to the input value.
+        
+        Args:
+            input_value: The current input signal value.
+
+        Returns:
+            The filtered value.
+        """
+        # Exponential smoothing formula
+        output = self.alpha * input_value + (1 - self.alpha) * self.prev_output
+        self.prev_output = output
+        return output
 
 
 def inverse_dq_transform(q, d, angle):
@@ -1102,6 +1136,7 @@ v_bus = []
 bus_current_list = []
 bemf = []
 currents = []    
+currents_filt = []
 torque_commanded_list = []
 torque_sensed_list = []
 angle_list = []
@@ -1121,7 +1156,7 @@ mod_speed_proportional = []
 mod_speed_output = []
 
 
-def simulate_motor(motor, sim, app, control, lut):
+def simulate_motor(motor, sim, app, control, lut, config):
     # Initializations
     speed_m = app.init_speed
     speed_e = speed_m * motor.pole_pairs
@@ -1131,8 +1166,12 @@ def simulate_motor(motor, sim, app, control, lut):
     id_ramped = 0
     torque_ramped = 0
     ia, ib, ic = 0, 0, 0
+    ia_filt, ib_filt, ic_filt = 0, 0, 0
     torque = 0
     battery_dv = 0
+    ia_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
+    ib_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
+    ic_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1171,7 +1210,7 @@ def simulate_motor(motor, sim, app, control, lut):
         iqd_ramped_list.append([iq_ramped, id_ramped])
 
         # Convert abc frame currents to dq currents
-        iq_sensed, id_sensed = dq_transform(ia, ib, ic, angle_e)
+        iq_sensed, id_sensed = dq_transform(ia_filt, ib_filt, ic_filt, angle_e)
         iqd_sensed_list.append([iq_sensed, id_sensed])
         
         # Errors
@@ -1268,7 +1307,12 @@ def simulate_motor(motor, sim, app, control, lut):
                         args=(va_terminal, vb_terminal, vc_terminal, motor), method='RK45')    
 
         ia, ib, ic = sol.y[:, -1]
-        currents.append([ia, ib, ic])        
+        ia_filt = ia_lpf.filter(ia)
+        ib_filt = ib_lpf.filter(ib)
+        ic_filt = ic_lpf.filter(ic)
+
+        currents.append([ia, ib, ic])
+        currents_filt.append([ia_filt, ib_filt, ic_filt])
 
         torque_sensed = motor.torque(iq_sensed, id_sensed)
         torque_sensed_list.append(torque_sensed)
@@ -1314,7 +1358,7 @@ if (app.torque_command_flag):
 
 
 # Run the simulation
-simulate_motor(motor, sim, app, control, lut)
+simulate_motor(motor, sim, app, control, lut, config)
 
 
 # Plot results
@@ -1335,6 +1379,7 @@ v_bus = np.array(v_bus)
 bus_current_list = np.array(bus_current_list)
 bemf = np.array(bemf)
 currents = np.array(currents)
+currents_filt = np.array(currents_filt)
 torque_commanded_list = np.array(torque_commanded_list)
 torque_sensed_list = np.array(torque_sensed_list)
 angle_list = np.array(angle_list)
@@ -1391,6 +1436,9 @@ data = {
     "ia": currents[:, 0],
     "ib": currents[:, 1],    
     "ic": currents[:, 2],
+    "ia_filt": currents_filt[:, 0],
+    "ib_filt": currents_filt[:, 1],    
+    "ic_filt": currents_filt[:, 2],    
     "torque_commanded": torque_commanded_list,
     "torque_sensed": torque_sensed_list,
     "angle_m": angle_list[:, 0],
