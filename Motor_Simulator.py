@@ -589,11 +589,10 @@ class LUT:
 
         # Fill mtpa_lut with values from current_lut
         torque_threshold = self.torque_increment / 10
+        # Initialize a list to track the last valid Iq and Id for each speed index
+        last_valid_values = [[0, 0, 0] for _ in speed_list]        
         for mtpa_row_index, mtpa_torque in enumerate(torque_list):
             for speed_index in range(len(speed_list)):
-                # Initialize a list to track the last valid Iq and Id for each speed index
-                last_valid_values = [[0, 0, 0] for _ in speed_list]            
-
                 # Filter rows in current_lut that meet the torque threshold
                 filtered_rows = [
                     (r, current_lut[r][speed_index])  # Row index and corresponding cell
