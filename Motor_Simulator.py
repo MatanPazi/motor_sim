@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 13th, 2025
-Version: 3.0
+Date: January 15th, 2025
+Version: 3.1
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -80,6 +80,9 @@ class Config:
             short_circuit (bool):
                 - True: Activates short circuit at a certain predetermined time.
                 - False: Normal operation.
+            battery_capacity (float): Battery capacity [Ah].
+            battery_max_voltage (float): Battery max voltage [V]
+            battery_internal_resistance (float): Battery internal resistance [Ohm]. Taken as an estimate from the discharge curves.
 
             # Control parameters
             Kp (n/a): current loop proportional gain
@@ -143,9 +146,12 @@ class Config:
         self.acceleration = 10000
         self.current_ramp = 10000
         self.torque_ramp = 1000
-        self.vbus = 44.0
+        self.vbus_init = 44.0
         self.init_speed = 0.0
         self.short_circuit = False
+        self.battery_capacity = 40
+        self.battery_max_voltage = 58.8
+        self.battery_internal_resistance = 0.001
 
         # Control parameters
         self.kp_d = 70000
@@ -157,7 +163,7 @@ class Config:
         # Additional gains must be used to:
             # Output voltages and not compare values (k_pwm).
             # Taking into account shifting that occurs in microprocessors to avoid floating points (k_shifting).
-        self.k_pwm = (self.vbus / 2) / self.pwm_period          # max phase voltage / PWM period
+        self.k_pwm = (self.vbus_init / 2) / self.pwm_period          # max phase voltage / PWM period
         self.k_shifting = 2**13
         self.sampling_time = 62.5e-6
         self.dead_time = 0e-9
@@ -166,7 +172,7 @@ class Config:
         self.afc_harmonic = 6
         self.afc_method = 0
         self.decoupling_enabled = 0
-        self.mod_speed_threshold = self.vbus / np.sqrt(3)     # see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.mod_speed_threshold = self.vbus_init / np.sqrt(3)     # see "A Quick Look on Three-phase Overmodulation Waveforms"
         self.mod_speed_kp = 20000
         self.mod_speed_ki = 5000
 
@@ -310,9 +316,14 @@ class Application:
         self.acceleration = config.acceleration
         self.current_ramp = config.current_ramp
         self.torque_ramp = config.torque_ramp
-        self.vbus = config.vbus        
+        self.vbus_init = config.vbus_init
+        self.vbus = self.vbus_init
         self.init_speed = config.init_speed
         self.short_circuit = config.short_circuit
+        self.battery_capacity = config.battery_capacity * 3600                          # Converting to coulomb
+        self.battery_max_voltage = config.battery_max_voltage
+        self.battery_capacitance = self.battery_capacity / self.battery_max_voltage     # Conservative estimate of capacitance [Farad]
+        self.battery_internal_resistance = config.battery_internal_resistance
 
 class MotorControl:
     def __init__(self, config):
@@ -326,8 +337,8 @@ class MotorControl:
         self.vd = 0
         self.vq = 0
         self.vs = 0
-        self.pi_v_lim = config.vbus * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
-        self.max_phase_v = config.vbus / 2                 # Max phase voltage
+        self.pi_v_lim = config.vbus_init * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.max_phase_v = config.vbus_init / 2                 # Max phase voltage
         self.sampling_time = config.sampling_time
         self.half_sampling_time = config.sampling_time / 2
         self.pi_integral_out_q = 0
@@ -528,7 +539,7 @@ class LUT:
         speed_list = np.arange(0,self.speed_max + self.speed_increment, self.speed_increment)
 
         current_list = np.linspace(0,motor.i_max, int(len(torque_list) * motor.i_max / self.torque_max))
-        vmax = app.vbus / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
+        vmax = app.vbus_init / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
         
         current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
         self.mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
@@ -801,7 +812,7 @@ def center_aligned_pwm_with_deadtime(va, vb, vc, max_v, t, pwm_period, half_peri
     return np.array([pwm_a_top, pwm_b_top, pwm_c_top]), np.array([pwm_a_bottom, pwm_b_bottom, pwm_c_bottom])
 
 
-def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom):
+def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom, vbus):
     """
     Set the terminal voltages while taking dead time into account based on current direction:
 
@@ -820,27 +831,27 @@ def terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bott
         if ia > 0:
             va_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            va_terminal = app.vbus  # Top transistor's voltage (bus voltage)
+            va_terminal = vbus  # Top transistor's voltage (bus voltage)
     else:
-        va_terminal = pwm_signals_top[0] * app.vbus
+        va_terminal = pwm_signals_top[0] * vbus
 
     # Phase B
     if pwm_signals_top[1] == 0 and pwm_signals_bottom[1] == 0:
         if ib > 0:
             vb_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            vb_terminal = app.vbus  # Top transistor's voltage (bus voltage)
+            vb_terminal = vbus  # Top transistor's voltage (bus voltage)
     else:
-        vb_terminal = pwm_signals_top[1] * app.vbus
+        vb_terminal = pwm_signals_top[1] * vbus
 
     # Phase C
     if pwm_signals_top[2] == 0 and pwm_signals_bottom[2] == 0:
         if ic > 0:
             vc_terminal = 0  # Bottom transistor's voltage (ground)
         else:
-            vc_terminal = app.vbus  # Top transistor's voltage (bus voltage)
+            vc_terminal = vbus  # Top transistor's voltage (bus voltage)
     else:
-        vc_terminal = pwm_signals_top[2] * app.vbus
+        vc_terminal = pwm_signals_top[2] * vbus
 
     return va_terminal, vb_terminal, vc_terminal
 
@@ -1087,6 +1098,8 @@ vabc_sine_mod_list = []
 vabc_list = []
 pwm_list = []
 v_terminal = []
+v_bus = []
+bus_current_list = []
 bemf = []
 currents = []    
 torque_commanded_list = []
@@ -1119,6 +1132,7 @@ def simulate_motor(motor, sim, app, control, lut):
     torque_ramped = 0
     ia, ib, ic = 0, 0, 0
     torque = 0
+    battery_dv = 0
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1218,7 +1232,7 @@ def simulate_motor(motor, sim, app, control, lut):
         # Calculate transistor values including dead time        
         # Short circuit the phases at half the sim time (Arbitrary) if short_circuit == True
         if (app.short_circuit == False): # or ((app.short_circuit == True) and (t < (sim.total_time / 2))):
-            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, app.vbus/2, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
+            pwm_signals_top, pwm_signals_bottom = center_aligned_pwm_with_deadtime(va, vb, vc, control.max_phase_v, t, control.sampling_time, control.half_sampling_time, control.dead_time) 
         else:
             pwm_signals_top = [0, 0, 0]
             pwm_signals_bottom = [1, 1, 1]                    
@@ -1226,7 +1240,7 @@ def simulate_motor(motor, sim, app, control, lut):
         pwm_list.append([pwm_signals_top, pwm_signals_bottom])
 
         # Calculate terminal voltages including dead time (Terminal voltage are the voltages commanded by the drive unit, not the actual phase voltages.)
-        va_terminal, vb_terminal, vc_terminal = terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom)
+        va_terminal, vb_terminal, vc_terminal = terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom, app.vbus)
         v_terminal.append([va_terminal, vb_terminal, vc_terminal])
 
         # Update Ld, Lq
@@ -1262,6 +1276,20 @@ def simulate_motor(motor, sim, app, control, lut):
         angle_m += speed_m * sim.time_step
         angle_e += speed_e * sim.time_step
         angle_list.append([angle_m, angle_e])
+
+        # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
+        bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
+        bus_current_list.append(bus_current)    
+        battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
+        app.vbus = app.vbus_init - (battery_dv + bus_current * app.battery_internal_resistance)            
+        v_bus.append(app.vbus)
+
+        # Updating some parameters which are a function of vbus:
+        control.pi_v_lim = app.vbus * 0.65
+        control.max_phase_v = app.vbus / 2
+        control.mod_speed_threshold = app.vbus / np.sqrt(3)
+
+
 
 # Instantiate objects
 config = Config()
@@ -1303,6 +1331,8 @@ vabc_sine_mod_list = np.array(vabc_sine_mod_list)
 vabc_list = np.array(vabc_list)
 pwm_list = np.array(pwm_list)
 v_terminal = np.array(v_terminal)
+v_bus = np.array(v_bus)
+bus_current_list = np.array(bus_current_list)
 bemf = np.array(bemf)
 currents = np.array(currents)
 torque_commanded_list = np.array(torque_commanded_list)
@@ -1352,7 +1382,9 @@ data = {
     "pwmBottomC": pwm_list[:, 1, 2],
     "va_terminal": v_terminal[:, 0],
     "vb_terminal": v_terminal[:, 1],    
-    "vc_terminal": v_terminal[:, 2],        
+    "vc_terminal": v_terminal[:, 2],
+    "v_bus": v_bus,
+    "bus_current": bus_current_list,
     "bemf_a": bemf[:, 0],
     "bemf_b": bemf[:, 1],    
     "bemf_c": bemf[:, 2],        
