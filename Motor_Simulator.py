@@ -48,6 +48,7 @@ class Config:
             Lq_base (float): Q-axis inductance measured at low current [H].
             Ld_base (float): D-axis inductance measured at low current [H].
             x_factor (float): The change in phase impedance from the nominal values.
+                            If all x_factors are equal (= 1), the motor phases are balanced.
             bemf_const (float): Peak line-to-line voltage measured between two phases [V/(rad/sec)].
             flux_linkage (float): Permanent magnet flux linkage [Wb].
             inertia (float): Motor inertia [kg*m^2].
@@ -67,7 +68,8 @@ class Config:
                 - True: Speed is controlled externally (e.g., by a dynamometer).
                 - False: Speed is determined by torque and motor dynamics.
             commanded_speed (float): Final speed command [rad/sec].
-            torque_command_flag (bool): Decides whether to command torque using a lookup table generated based on motor parameters or commanding iq, id directly
+            torque_command_flag (bool): Decides whether to command torque using a lookup table generated
+                                        based on motor parameters or commanding iq, id directly
                 - True: Command torque using a LUT.
                 - False: Command iq, id directly.
             commanded_iq (float): Final commanded q-axis current [A].
@@ -83,7 +85,8 @@ class Config:
                 - False: Normal operation.
             battery_capacity (float): Battery capacity [Ah].
             battery_max_voltage (float): Battery max voltage [V]
-            battery_internal_resistance (float): Battery internal resistance [Ohm]. Taken as an estimate from the discharge curves. Includes the total # of cells in parallel and series.
+            battery_internal_resistance (float): Battery internal resistance [Ohm].
+                                                Taken as an estimate from the discharge curves. Includes the total # of cells in parallel and series.
 
             # Control parameters
             Kp (n/a): current loop proportional gain
