@@ -1534,5 +1534,6 @@ plt.show()
 '''
 TODO:
 Add support for unbalanced phases (different inductance/resistance per phase).
+Add more accurate bus current.
 Add support for induction motors.
 '''
