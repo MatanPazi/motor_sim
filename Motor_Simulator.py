@@ -47,6 +47,7 @@ class Config:
             Rs (float): Phase resistance [Ohm].
             Lq_base (float): Q-axis inductance measured at low current [H].
             Ld_base (float): D-axis inductance measured at low current [H].
+            x_factor (float): The change in phase impedance from the nominal values.
             bemf_const (float): Peak line-to-line voltage measured between two phases [V/(rad/sec)].
             flux_linkage (float): Permanent magnet flux linkage [Wb].
             inertia (float): Motor inertia [kg*m^2].
@@ -121,6 +122,9 @@ class Config:
         self.Rs = 0.0031
         self.Lq_base = 0.000101
         self.Ld_base = 0.000067
+        self.a_factor = 1
+        self.b_factor = 1
+        self.c_factor = 1
         self.bemf_const = 0.102
         self.inertia = 0.01
         self.visc_fric_coeff = 0.005
@@ -200,7 +204,13 @@ class Motor:
         self.Lq_base = config.Lq_base
         self.Ld_base = config.Ld_base
         self.Lq = config.Lq_base
-        self.Ld = config.Ld_base        
+        self.Ld = config.Ld_base    
+        self.a_factor = config.a_factor
+        self.b_factor = config.b_factor
+        self.c_factor = config.c_factor
+        self.Ra = self.a_factor * self.Rs
+        self.Rb = self.b_factor * self.Rs
+        self.Rc = self.c_factor * self.Rs
         self.Laa = 0
         self.Lbb = 0
         self.Lcc = 0
@@ -241,28 +251,28 @@ class Motor:
         """
         Update the inductances in the abc frame (Based on the dq transform)
         """        
-        self.Laa = self.Lq * (np.cos(theta))**2 + self.Ld * (np.sin(theta))**2
-        self.Lbb = self.Lq * (np.cos(theta - 2*np.pi/3))**2 + self.Ld * (np.sin(theta - 2*np.pi/3))**2
-        self.Lcc = self.Lq * (np.cos(theta + 2*np.pi/3))**2 + self.Ld * (np.sin(theta + 2*np.pi/3))**2   
+        self.Laa = self.a_factor * self.Lq * (np.cos(theta))**2 + self.Ld * (np.sin(theta))**2
+        self.Lbb = self.b_factor * self.Lq * (np.cos(theta - 2*np.pi/3))**2 + self.Ld * (np.sin(theta - 2*np.pi/3))**2
+        self.Lcc = self.c_factor * self.Lq * (np.cos(theta + 2*np.pi/3))**2 + self.Ld * (np.sin(theta + 2*np.pi/3))**2   
 
         # Mutual inductance - Assuming position dependency only.
-        self.Lab = self.Lq * np.cos(theta) * np.cos(theta - 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta - 2*np.pi/3)
-        self.Lac = self.Lq * np.cos(theta) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta + 2*np.pi/3)
-        self.Lbc = self.Lq * np.cos(theta - 2*np.pi/3) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta - 2*np.pi/3) * np.sin(theta + 2*np.pi/3)
+        self.Lab = np.sqrt(self.a_factor * self.b_factor) * self.Lq * np.cos(theta) * np.cos(theta - 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta - 2*np.pi/3)
+        self.Lac = np.sqrt(self.a_factor * self.c_factor) * self.Lq * np.cos(theta) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta) * np.sin(theta + 2*np.pi/3)
+        self.Lbc = np.sqrt(self.b_factor * self.c_factor) * self.Lq * np.cos(theta - 2*np.pi/3) * np.cos(theta + 2*np.pi/3) + self.Ld * np.sin(theta - 2*np.pi/3) * np.sin(theta + 2*np.pi/3)
 
     def inductance_abc_dot(self, theta, speed):        
         """
         Update the inductances time derivatives
         """  
         # Derivatives for self inductances
-        self.Laa_dot = -(self.Lq - self.Ld) * np.sin(2 * theta) * speed
-        self.Lbb_dot = -(self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
-        self.Lcc_dot = (self.Lq - self.Ld) * np.sin(2 * (theta + np.pi/6)) * speed
+        self.Laa_dot = -self.a_factor * (self.Lq - self.Ld) * np.sin(2 * theta) * speed
+        self.Lbb_dot = -self.b_factor * (self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
+        self.Lcc_dot = self.c_factor * (self.Lq - self.Ld) * np.sin(2 * (theta + np.pi/6)) * speed
         
         # Derivatives for mutual inductances
-        self.Lab_dot = (self.Lq - self.Ld) * np.cos(np.pi/6 - 2 * theta) * speed
-        self.Lac_dot = -(self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
-        self.Lbc_dot = -(self.Lq - self.Ld) * np.sin(2 * theta) * speed
+        self.Lab_dot = np.sqrt(self.a_factor * self.b_factor) * (self.Lq - self.Ld) * np.cos(np.pi/6 - 2 * theta) * speed
+        self.Lac_dot = -np.sqrt(self.a_factor * self.c_factor) * (self.Lq - self.Ld) * np.cos(2 * theta + np.pi/6) * speed
+        self.Lbc_dot = -np.sqrt(self.b_factor * self.c_factor) * (self.Lq - self.Ld) * np.sin(2 * theta) * speed
 
     def phase_bemf(self, angle, phase_shift):
         """
@@ -794,9 +804,9 @@ def phase_current_ode(t, currents, va, vb, vc, motor):
 
     # The b vector (Terminal voltages minus resistive and flux terms)
     b = np.array([
-        va - ia * motor.Rs - motor.bemf_a - motor.Laa_dot * ia - motor.Lab_dot * ib - motor.Lac_dot * ic,
-        vb - ib * motor.Rs - motor.bemf_b - motor.Lab_dot * ia - motor.Lbb_dot * ib - motor.Lbc_dot * ic,
-        vc - ic * motor.Rs - motor.bemf_c - motor.Lac_dot * ia - motor.Lbc_dot * ib - motor.Lcc_dot * ic,
+        va - ia * motor.Ra - motor.bemf_a - motor.Laa_dot * ia - motor.Lab_dot * ib - motor.Lac_dot * ic,
+        vb - ib * motor.Rb - motor.bemf_b - motor.Lab_dot * ia - motor.Lbb_dot * ib - motor.Lbc_dot * ic,
+        vc - ic * motor.Rc - motor.bemf_c - motor.Lac_dot * ia - motor.Lbc_dot * ib - motor.Lcc_dot * ic,
         0   # KCL constraint i_a + i_b + i_c = 0
         ])
 
@@ -1533,7 +1543,6 @@ plt.show()
 
 '''
 TODO:
-Add support for unbalanced phases (different inductance/resistance per phase).
 Add more accurate bus current.
 Add support for induction motors.
 '''
