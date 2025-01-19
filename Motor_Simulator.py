@@ -87,6 +87,10 @@ class Config:
             battery_max_voltage (float): Battery max voltage [V]
             battery_internal_resistance (float): Battery internal resistance [Ohm].
                                                 Taken as an estimate from the discharge curves. Includes the total # of cells in parallel and series.
+            battery_inductance (float): Battery inductance, mainly due to cable connecting to inverter [H]
+            transistor_resistance (float): Average high/low transistor ON resistance (Ohm)
+            switch_energy_loss (float): Transistor energy loss per switch [Joule]
+
 
             # Control parameters
             Kp (n/a): current loop proportional gain
@@ -162,6 +166,9 @@ class Config:
         self.battery_capacity = 40
         self.battery_max_voltage = 58.8
         self.battery_internal_resistance = 0.01
+        self.battery_inductance = 0.00001
+        self.transistor_resistance = 0.001
+        self.switch_energy_loss = 0.001
 
         # Control parameters
         self.kp_d = 70000
@@ -359,6 +366,7 @@ class MotorControl:
         self.pi_v_lim = config.vbus_init * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
         self.max_phase_v = config.vbus_init / 2                 # Max phase voltage
         self.sampling_time = config.sampling_time
+        self.sampling_frequency = 1 / self.sampling_time
         self.half_sampling_time = config.sampling_time / 2
         self.pi_integral_out_q = 0
         self.pi_integral_out_d = 0
@@ -1333,9 +1341,16 @@ def simulate_motor(motor, sim, app, control, lut, config):
         angle_e += speed_e * sim.time_step
         angle_list.append([angle_m, angle_e])
 
-        # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
-        bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
+        # Calculating battery current and voltage.
+        power_motor = ia * va_terminal + ib * vb_terminal + ic * vc_terminal
+        power_conduction = config.transistor_resistance * (ia**2 + ib**2 + ic**2)
+        power_switching = 6 * control.sampling_frequency * config.switch_energy_loss
+        power_battery = power_motor + power_conduction + power_switching        
+        bus_current_ref = power_battery / app.vbus
+
+        # bus_current += (bus_current_ref - bus_current) * (sim.time_step / config.battery_inductance) * app.vbus
         bus_current_list.append(bus_current)    
+        # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
         battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
         app.vbus = app.vbus_init - (battery_dv + bus_current * app.battery_internal_resistance)            
         v_bus.append(app.vbus)
