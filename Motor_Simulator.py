@@ -85,9 +85,13 @@ class Config:
                 - False: Normal operation.
             battery_capacity (float): Battery capacity [Ah].
             battery_max_voltage (float): Battery max voltage [V]
-            battery_internal_resistance (float): Battery internal resistance [Ohm].
+            battery_resistance (float): Battery internal resistance [Ohm].
                                                 Taken as an estimate from the discharge curves. Includes the total # of cells in parallel and series.
-            battery_inductance (float): Battery inductance, mainly due to cable connecting to inverter [H]
+            battery_inductance (float): Battery internal inductance [H]
+            cable_resistance (float): Cable connecting battery and inverter resistance [Ohm].
+            cable_inductance (float): Cable connecting battery and inverter inductance [H]            
+            dc_link_capacitance (float): DC link capacitors total capacitance [F]
+            dc_link_resistance (float): DC link capacitors ESR [Ohm]            
             transistor_resistance (float): Average high/low transistor ON resistance (Ohm)
             switch_energy_loss (float): Transistor energy loss per switch [Joule]
 
@@ -165,8 +169,12 @@ class Config:
         self.short_circuit = False
         self.battery_capacity = 40
         self.battery_max_voltage = 58.8
-        self.battery_internal_resistance = 0.01
-        self.battery_inductance = 0.00001
+        self.battery_resistance = 0.015
+        self.battery_inductance = 0.000003
+        self.cable_resistance = 0.002
+        self.cable_inductance = 0.000005
+        self.dc_link_capacitance = 0.004
+        self.dc_link_resistance = 0.002
         self.transistor_resistance = 0.001
         self.switch_energy_loss = 0.001
 
@@ -349,7 +357,7 @@ class Application:
         self.battery_capacity = config.battery_capacity * 3600                          # Converting to coulomb
         self.battery_max_voltage = config.battery_max_voltage
         self.battery_capacitance = self.battery_capacity / self.battery_max_voltage     # Conservative estimate of capacitance [Farad]
-        self.battery_internal_resistance = config.battery_internal_resistance
+        self.battery_resistance = config.battery_resistance
 
 class MotorControl:
     def __init__(self, config):
@@ -1192,6 +1200,37 @@ def simulate_motor(motor, sim, app, control, lut, config):
     ia_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
     ib_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
     ic_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
+    
+    # Modeling the filter between the battery and the inverter:
+    # Assuming an RLC network:
+    # A resistor in series w/ an inductor modeling the cables connecting the two.
+    # A resistor in series with a capacitor modeling the DC link capacitors
+    # Vin --- R1 --- L ---+--- Vout
+    #                     |
+    #                     C
+    #                     |
+    #                     R2
+    #                     |
+    #                    GND
+    # Transfer function:
+    #   H(s) = (1 + s*C*R2) / (1 + s*C*(R2 + R1) + s^2*C*L)
+    # Bilinear transform:
+    #   H(z) = (b0 + b1*z^(-1) + b2*z^(-2)) / (a0 + a1*z^(-1) + a2*z^(-2))
+    #   b0 = 1 + (2*C*R2)/T,     b1 = 1 - (2*C*R2)/T,     b2 = 0
+    #   a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2),    a1 = 2 - (8*C*L)/(T^2),  a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
+
+    R1 = app.battery_resistance + config.cable_resistance
+    L = app.battery_inductance + config.cable_inductance
+    C = config.dc_link_capacitance
+    R2 = config.dc_link_resistance
+    T = sim.time_step
+    dc_link_b0 = 1 + (2*C*R2) / T
+    dc_link_b1 = 1 - (2*C*R2) / T
+    dc_link_a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
+    dc_link_a1 = 2 - (8*C*L)/(T^2)
+    dc_link_a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
+
+
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1352,7 +1391,7 @@ def simulate_motor(motor, sim, app, control, lut, config):
         bus_current_list.append(bus_current)    
         # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
         battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
-        app.vbus = app.vbus_init - (battery_dv + bus_current * app.battery_internal_resistance)            
+        app.vbus = app.vbus_init - (battery_dv + bus_current * app.battery_resistance)            
         v_bus.append(app.vbus)
 
         # Updating some parameters which are a function of vbus:
