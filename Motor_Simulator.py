@@ -1347,8 +1347,8 @@ def simulate_motor(motor, sim, app, control, lut, config):
         power_switching = 6 * control.sampling_frequency * config.switch_energy_loss
         power_battery = power_motor + power_conduction + power_switching        
         bus_current_ref = power_battery / app.vbus
-
-        # bus_current += (bus_current_ref - bus_current) * (sim.time_step / config.battery_inductance) * app.vbus
+        # Temporary measure:
+        bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
         bus_current_list.append(bus_current)    
         # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
         battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
