@@ -748,6 +748,42 @@ class LowPassFilter:
         output = self.alpha * input_value + (1 - self.alpha) * self.prev_output
         self.prev_output = output
         return output
+    
+class IIRFilter:
+    def __init__(self, b, a):
+        """
+        Initialize the IIR filter with given coefficients.
+
+        Parameters:
+        - b: Numerator coefficients of the transfer function
+        - a: Denominator coefficients of the transfer function
+        """
+        self.b = np.array(b) / a[0]  # Normalize by a[0]
+        self.a = np.array(a) / a[0]
+        self.x = np.zeros(len(b))  # Initialize input buffer
+        self.y = np.zeros(len(a))  # Initialize output buffer
+
+    def step(self, input_sample):
+        """
+        Process a single sample through the filter.
+
+        Parameters:
+        - input_sample: The current input sample
+
+        Returns:
+        - output_sample: The current filtered output sample
+        """
+        # Shift input and output buffers
+        self.x = np.roll(self.x, 1)
+        self.y = np.roll(self.y, 1)
+        self.x[0] = input_sample
+
+        # Compute the output using direct form II transposed
+        output_sample = np.sum(self.b * self.x) - np.sum(self.a[1:] * self.y[1:])
+        
+        self.y[0] = output_sample
+
+        return output_sample    
 
 
 def inverse_dq_transform(q, d, angle):
@@ -1220,17 +1256,16 @@ def simulate_motor(motor, sim, app, control, lut, config):
     #   a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2),    a1 = 2 - (8*C*L)/(T^2),  a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
 
     R1 = app.battery_resistance + config.cable_resistance
-    L = app.battery_inductance + config.cable_inductance
+    L = config.battery_inductance + config.cable_inductance
     C = config.dc_link_capacitance
     R2 = config.dc_link_resistance
     T = sim.time_step
     dc_link_b0 = 1 + (2*C*R2) / T
     dc_link_b1 = 1 - (2*C*R2) / T
-    dc_link_a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
-    dc_link_a1 = 2 - (8*C*L)/(T^2)
-    dc_link_a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
-
-
+    dc_link_a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
+    dc_link_a1 = 2 - (8*C*L)/(T**2)
+    dc_link_a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
+    dc_link_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2])    
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1387,7 +1422,8 @@ def simulate_motor(motor, sim, app, control, lut, config):
         power_battery = power_motor + power_conduction + power_switching        
         bus_current_ref = power_battery / app.vbus
         # Temporary measure:
-        bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
+        # bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
+        bus_current = dc_link_filt.step(bus_current_ref)
         bus_current_list.append(bus_current)    
         # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
         battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
