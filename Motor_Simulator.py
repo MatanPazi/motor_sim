@@ -164,7 +164,7 @@ class Config:
         self.acceleration = 10000
         self.current_ramp = 10000
         self.torque_ramp = 1000
-        self.vbus_init = 44.0
+        self.v_batt_init = 44.0
         self.init_speed = 0.0
         self.short_circuit = False
         self.battery_capacity = 40
@@ -188,7 +188,7 @@ class Config:
         # Additional gains must be used to:
             # Output voltages and not compare values (k_pwm).
             # Taking into account shifting that occurs in microprocessors to avoid floating points (k_shifting).
-        self.k_pwm = (self.vbus_init / 2) / self.pwm_period          # max phase voltage / PWM period
+        self.k_pwm = (self.v_batt_init / 2) / self.pwm_period          # max phase voltage / PWM period
         self.k_shifting = 2**13
         self.sampling_time = 62.5e-6
         self.dead_time = 0e-9
@@ -197,7 +197,7 @@ class Config:
         self.afc_harmonic = 6
         self.afc_method = 0
         self.decoupling_enabled = 0
-        self.mod_speed_threshold = self.vbus_init / np.sqrt(3)     # see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.mod_speed_threshold = self.v_batt_init / np.sqrt(3)     # see "A Quick Look on Three-phase Overmodulation Waveforms"
         self.mod_speed_kp = 20000
         self.mod_speed_ki = 5000
 
@@ -350,8 +350,8 @@ class Application:
         self.acceleration = config.acceleration
         self.current_ramp = config.current_ramp
         self.torque_ramp = config.torque_ramp
-        self.vbus_init = config.vbus_init
-        self.vbus = self.vbus_init
+        self.v_batt_init = config.v_batt_init
+        self.vbus = self.v_batt_init
         self.init_speed = config.init_speed
         self.short_circuit = config.short_circuit
         self.battery_capacity = config.battery_capacity * 3600                          # Converting to coulomb
@@ -371,8 +371,8 @@ class MotorControl:
         self.vd = 0
         self.vq = 0
         self.vs = 0
-        self.pi_v_lim = config.vbus_init * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
-        self.max_phase_v = config.vbus_init / 2                 # Max phase voltage
+        self.pi_v_lim = config.v_batt_init * 0.65                 # Slightly above 2/pi, which is max overmodulation, see "A Quick Look on Three-phase Overmodulation Waveforms"
+        self.max_phase_v = config.v_batt_init / 2                 # Max phase voltage
         self.sampling_time = config.sampling_time
         self.sampling_frequency = 1 / self.sampling_time
         self.half_sampling_time = config.sampling_time / 2
@@ -574,7 +574,7 @@ class LUT:
         speed_list = np.arange(0,self.speed_max + self.speed_increment, self.speed_increment)
 
         current_list = np.linspace(0,motor.i_max, int(len(torque_list) * motor.i_max / self.torque_max))
-        vmax = app.vbus_init / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
+        vmax = app.v_batt_init / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
         
         current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
         self.mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
@@ -750,7 +750,7 @@ class LowPassFilter:
         return output
     
 class IIRFilter:
-    def __init__(self, b, a):
+    def __init__(self, b, a, init_val):
         """
         Initialize the IIR filter with given coefficients.
 
@@ -759,9 +759,11 @@ class IIRFilter:
         - a: Denominator coefficients of the transfer function
         """
         self.b = np.array(b) / a[0]  # Normalize by a[0]
-        self.a = np.array(a) / a[0]
-        self.x = np.zeros(len(b))  # Initialize input buffer
-        self.y = np.zeros(len(a))  # Initialize output buffer
+        self.a = np.array(a) / a[0]        
+        # Both input and output buffers are initialized to the same value
+        self.x = np.full(len(b), init_val)  # Initialize input buffer
+        self.y = np.full(len(a), init_val)  # Initialize output buffer        
+
 
     def step(self, input_sample):
         """
@@ -1265,7 +1267,8 @@ def simulate_motor(motor, sim, app, control, lut, config):
     dc_link_a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
     dc_link_a1 = 2 - (8*C*L)/(T**2)
     dc_link_a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
-    dc_link_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2])    
+    dc_link_curr_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2], 50)
+    dc_link_volt_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2], app.v_batt_init)
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1420,14 +1423,15 @@ def simulate_motor(motor, sim, app, control, lut, config):
         power_conduction = config.transistor_resistance * (ia**2 + ib**2 + ic**2)
         power_switching = 6 * control.sampling_frequency * config.switch_energy_loss
         power_battery = power_motor + power_conduction + power_switching        
-        bus_current_ref = power_battery / app.vbus
+        i_bus = power_battery / app.vbus
         # Temporary measure:
         # bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
-        bus_current = dc_link_filt.step(bus_current_ref)
-        bus_current_list.append(bus_current)    
+        i_batt = dc_link_curr_filt.step(i_bus)
+        bus_current_list.append(i_batt)    
         # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
-        battery_dv += (bus_current / app.battery_capacitance) * sim.time_step
-        app.vbus = app.vbus_init - (battery_dv + bus_current * app.battery_resistance)            
+        battery_dv += (i_batt / app.battery_capacitance) * sim.time_step
+        v_batt = app.v_batt_init - (battery_dv + i_batt * app.battery_resistance)            
+        app.vbus = dc_link_volt_filt.step(88)
         v_bus.append(app.vbus)
 
         # Updating some parameters which are a function of vbus:
@@ -1600,12 +1604,9 @@ plot_options = {
     "vd": 2,
     "v_amp": 2,
     "v_lim": 2,
-    "ia": 3,
-    "ib": 3,
-    "ic": 3,
-    "bemf_a": 4,  
-    "bemf_b": 4,  
-    "bemf_c": 4,  
+    "v_bus": 3,
+    "bus_current": 4,  
+
 }
 
 
