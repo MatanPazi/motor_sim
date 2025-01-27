@@ -15,6 +15,7 @@ This repository contains a Python-based motor simulator designed to aid in contr
 - Supports decoupling
 - Features a simple battery model
 - Supports an input filter (RLC network) from the battery
+- Supports unbalanced phases
 
 ## How It Works
 
