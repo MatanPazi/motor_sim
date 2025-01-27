@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 15th, 2025
-Version: 3.2
+Date: January 27th, 2025
+Version: 3.3
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -78,7 +78,7 @@ class Config:
             acceleration (float): Acceleration [rad/sec^2]. Instantaneous if set to 0.
             current_ramp (float): Rate of change in current [A/sec].
             torque_ramp (float): Rate of change in torque [Nm/sec].
-            vbus (float): Supply voltage [V].
+            v_batt_init (float): Initial battery voltage [V].
             init_speed (float): Initial speed [rad/sec].
             short_circuit (bool):
                 - True: Activates short circuit at a certain predetermined time.
@@ -351,7 +351,7 @@ class Application:
         self.current_ramp = config.current_ramp
         self.torque_ramp = config.torque_ramp
         self.v_batt_init = config.v_batt_init
-        self.vbus = self.v_batt_init
+        self.v_bus = self.v_batt_init
         self.init_speed = config.init_speed
         self.short_circuit = config.short_circuit
         self.battery_capacity = config.battery_capacity * 3600                          # Converting to coulomb
@@ -754,16 +754,21 @@ class IIRFilter:
         """
         Initialize the IIR filter with given coefficients.
 
-        Parameters:
-        - b: Numerator coefficients of the transfer function
-        - a: Denominator coefficients of the transfer function
+        Args:
+            b: Numerator coefficients of the transfer function
+            a: Denominator coefficients of the transfer function
+            init_val: Initial value
         """
         self.b = np.array(b) / a[0]  # Normalize by a[0]
-        self.a = np.array(a) / a[0]        
-        # Both input and output buffers are initialized to the same value
-        self.x = np.full(len(b), init_val)  # Initialize input buffer
-        self.y = np.full(len(a), init_val)  # Initialize output buffer        
+        self.a = np.array(a) / a[0]
+        self.x = np.zeros(len(b))  # Initialize input buffer
+        self.y = np.zeros(len(a))  # Initialize output buffer
 
+        # Set all past inputs to initial_output
+        self.x = np.full(len(b), init_val)
+        # Set all past outputs based DC gain
+        steady_state_y = init_val * np.sum(b) / np.sum(a)
+        self.y = np.full(len(a), steady_state_y)
 
     def step(self, input_sample):
         """
@@ -1199,7 +1204,9 @@ vabc_list = []
 pwm_list = []
 v_terminal = []
 v_bus = []
-bus_current_list = []
+i_bus_list = []
+v_batt_list = []
+i_batt_list = []
 bemf = []
 currents = []    
 currents_filt = []
@@ -1235,6 +1242,8 @@ def simulate_motor(motor, sim, app, control, lut, config):
     ia_filt, ib_filt, ic_filt = 0, 0, 0
     torque = 0
     battery_dv = 0
+
+    # Assuming the phase currents are filtered before being read by the controller.
     ia_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
     ib_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
     ic_lpf = LowPassFilter(sim.time_step, config.phase_current_cutoff_freq)
@@ -1252,23 +1261,27 @@ def simulate_motor(motor, sim, app, control, lut, config):
     #                    GND
     # Transfer function:
     #   H(s) = (1 + s*C*R2) / (1 + s*C*(R2 + R1) + s^2*C*L)
-    # Bilinear transform:
-    #   H(z) = (b0 + b1*z^(-1) + b2*z^(-2)) / (a0 + a1*z^(-1) + a2*z^(-2))
-    #   b0 = 1 + (2*C*R2)/T,     b1 = 1 - (2*C*R2)/T,     b2 = 0
-    #   a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2),    a1 = 2 - (8*C*L)/(T^2),  a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T^2)
 
     R1 = app.battery_resistance + config.cable_resistance
     L = config.battery_inductance + config.cable_inductance
     C = config.dc_link_capacitance
     R2 = config.dc_link_resistance
-    T = sim.time_step
-    dc_link_b0 = 1 + (2*C*R2) / T
-    dc_link_b1 = 1 - (2*C*R2) / T
-    dc_link_a0 = 1 + 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
-    dc_link_a1 = 2 - (8*C*L)/(T**2)
-    dc_link_a2 = 1 - 2*(C*R1 + C*R2)/T + (4*C*L)/(T**2)
-    dc_link_curr_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2], 50)
-    dc_link_volt_filt = IIRFilter([dc_link_b0, dc_link_b1],[dc_link_a0, dc_link_a1, dc_link_a2], app.v_batt_init)
+
+    # Define the continuous-time transfer function H(s)
+    num = [C * R2, 1]
+    den = [L * C, C * (R1 + R2), 1]
+    H_s = ctrl.tf(num, den)
+
+    # Discretize the system
+    H_z = H_s.sample(sim.time_step, method='backward_diff')
+
+    # Extract numerator and denominator coefficients from the discrete system
+    num_z = H_z.num[0][0]
+    den_z = H_z.den[0][0]
+
+    # The filter affects the voltage and current passing between the battery and inverter
+    dc_link_curr_filt = IIRFilter(num_z, den_z, 0)
+    dc_link_volt_filt = IIRFilter(num_z, den_z, app.v_batt_init)
 
     for t in tqdm(sim.time_points, desc="Running simulation", unit=" Cycles"):
         # Ramp handling
@@ -1376,7 +1389,7 @@ def simulate_motor(motor, sim, app, control, lut, config):
         pwm_list.append([pwm_signals_top, pwm_signals_bottom])
 
         # Calculate terminal voltages including dead time (Terminal voltage are the voltages commanded by the drive unit, not the actual phase voltages.)
-        va_terminal, vb_terminal, vc_terminal = terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom, app.vbus)
+        va_terminal, vb_terminal, vc_terminal = terminal_voltage_with_deadtime(ia, ib, ic, pwm_signals_top, pwm_signals_bottom, app.v_bus)
         v_terminal.append([va_terminal, vb_terminal, vc_terminal])
 
         # Update Ld, Lq
@@ -1418,26 +1431,28 @@ def simulate_motor(motor, sim, app, control, lut, config):
         angle_e += speed_e * sim.time_step
         angle_list.append([angle_m, angle_e])
 
-        # Calculating battery current and voltage.
+        # Calculating power draw
         power_motor = ia * va_terminal + ib * vb_terminal + ic * vc_terminal
         power_conduction = config.transistor_resistance * (ia**2 + ib**2 + ic**2)
         power_switching = 6 * control.sampling_frequency * config.switch_energy_loss
         power_battery = power_motor + power_conduction + power_switching        
-        i_bus = power_battery / app.vbus
-        # Temporary measure:
-        # bus_current = 1.2 * (torque_sensed * speed_m) / app.vbus        # Assuming ~80% system efficiency.
+
+        i_bus = power_battery / app.v_bus
+        i_bus_list.append(i_bus)
         i_batt = dc_link_curr_filt.step(i_bus)
-        bus_current_list.append(i_batt)    
+        i_batt_list.append(i_batt)    
+
         # Updating the bus voltage based on a simplified model of a battery, a capacitor and an internal resistance
-        battery_dv += (i_batt / app.battery_capacitance) * sim.time_step
-        v_batt = app.v_batt_init - (battery_dv + i_batt * app.battery_resistance)            
-        app.vbus = dc_link_volt_filt.step(88)
-        v_bus.append(app.vbus)
+        battery_dv += (i_batt / app.battery_capacitance) * sim.time_step        
+        v_batt = app.v_batt_init - (battery_dv + i_batt * app.battery_resistance)
+        v_batt_list.append(v_batt)
+        app.v_bus = dc_link_volt_filt.step(v_batt) - i_batt * config.cable_resistance
+        v_bus.append(app.v_bus)
 
         # Updating some parameters which are a function of vbus:
-        control.pi_v_lim = app.vbus * 0.65
-        control.max_phase_v = app.vbus / 2
-        control.mod_speed_threshold = app.vbus / np.sqrt(3)
+        control.pi_v_lim = app.v_bus * 0.65
+        control.max_phase_v = app.v_bus / 2
+        control.mod_speed_threshold = app.v_bus / np.sqrt(3)
 
 
 
@@ -1482,7 +1497,9 @@ vabc_list = np.array(vabc_list)
 pwm_list = np.array(pwm_list)
 v_terminal = np.array(v_terminal)
 v_bus = np.array(v_bus)
-bus_current_list = np.array(bus_current_list)
+i_bus_list = np.array(i_bus_list)
+v_batt_list = np.array(v_batt_list)
+i_batt_list = np.array(i_batt_list)
 bemf = np.array(bemf)
 currents = np.array(currents)
 currents_filt = np.array(currents_filt)
@@ -1497,7 +1514,7 @@ mutual_inductance_dot_list = np.array(mutual_inductance_dot_list)
 phase_volt_diff = np.array(phase_volt_diff)
 phase_volt_diff_sine_mod = np.array(phase_volt_diff_sine_mod)
 voltage_amplitude = np.array(voltage_amplitude)
-voltage_limit = np.ones_like(time_points) * app.vbus / np.sqrt(3)
+voltage_limit = np.ones_like(time_points) * app.v_bus / np.sqrt(3)
 afc_integrals = np.array(afc_integrals)
 afc_outputs = np.array(afc_outputs)
 decoupling_outputs = np.array(decoupling_outputs)
@@ -1533,9 +1550,11 @@ data = {
     "pwmBottomC": pwm_list[:, 1, 2],
     "va_terminal": v_terminal[:, 0],
     "vb_terminal": v_terminal[:, 1],    
-    "vc_terminal": v_terminal[:, 2],
+    "vc_terminal": v_terminal[:, 2],    
     "v_bus": v_bus,
-    "bus_current": bus_current_list,
+    "i_bus": i_bus_list,
+    "v_batt": v_batt_list,
+    "i_batt": i_batt_list,
     "bemf_a": bemf[:, 0],
     "bemf_b": bemf[:, 1],    
     "bemf_c": bemf[:, 2],        
@@ -1604,9 +1623,12 @@ plot_options = {
     "vd": 2,
     "v_amp": 2,
     "v_lim": 2,
-    "v_bus": 3,
-    "bus_current": 4,  
-
+    "ia": 3,
+    "ib": 3,
+    "ic": 3,
+    "bemf_a": 4,  
+    "bemf_b": 4,  
+    "bemf_c": 4,  
 }
 
 
@@ -1637,6 +1659,5 @@ plt.show()
 
 '''
 TODO:
-Add more accurate bus current.
 Add support for induction motors.
 '''
