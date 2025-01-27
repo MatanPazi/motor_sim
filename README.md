@@ -13,6 +13,8 @@ This repository contains a Python-based motor simulator designed to aid in contr
 - Supports loading external MTPA LUTs
 - Supports AFC (Adaptive feed forward cancellation) control for harmonic attenuation
 - Supports decoupling
+- Features a simple battery model
+- Supports an input filter (RLC network) from the battery
 
 ## How It Works
 
