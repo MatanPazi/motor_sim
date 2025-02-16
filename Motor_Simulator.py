@@ -587,7 +587,7 @@ class LUT:
             res_torque_max = 1/res.fun
             motor.flux_linkage = motor.flux_linkage * (self.torque_max / res_torque_max)
         
-        for curr_index in range(len(current_list)):   
+        for curr_index in tqdm(range(len(current_list)),  desc="Generating MTPA LUT", unit=" Cycles"):
             motor.inductance_dq(current_list[curr_index], 0)     
             x0 = np.linspace(np.pi / 50, np.pi/2, 5)
             for speed_index in range(len(speed_list)):
