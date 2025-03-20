@@ -1,8 +1,8 @@
 """
 Script Name: Motor_Simulator.py
 Author: Matan Pazi
-Date: January 27th, 2025
-Version: 3.3
+Date: March 20th, 2025
+Version: 3.4
 Description: 
     This script simulates the behavior of a three-phase motor, including phase 
     current dynamics, PWM switching behavior, and motor torque generation.
@@ -79,6 +79,7 @@ class Config:
             current_ramp (float): Rate of change in current [A/sec].
             torque_ramp (float): Rate of change in torque [Nm/sec].
             v_batt_init (float): Initial battery voltage [V].
+            max_power (int): Max output power at v_batt_init voltage [W].
             init_speed (float): Initial speed [rad/sec].
             short_circuit (bool):
                 - True: Activates short circuit at a certain predetermined time.
@@ -165,6 +166,7 @@ class Config:
         self.current_ramp = 10000
         self.torque_ramp = 1000
         self.v_batt_init = 44.0
+        self.max_power = 9500
         self.init_speed = 0.0
         self.short_circuit = False
         self.battery_capacity = 40
@@ -245,7 +247,7 @@ class Motor:
         self.bemf_a = 0
         self.bemf_b = 0
         self.bemf_c = 0        
-        self.flux_linkage = config.bemf_const / config.pole_pairs / np.sqrt(2)
+        self.flux_linkage = self.bemf_const / config.pole_pairs
         self.harmonics = config.harmonics
         self.inertia = config.inertia
         self.visc_fric_coeff = config.visc_fric_coeff
@@ -260,10 +262,10 @@ class Motor:
         # Assuming inductance reduces by half at peak current.
         if (Is < self.i_max):
             self.Lq = self.Lq_base * (1 - 0.4 * Is/self.i_max)
-            self.Ld = self.Ld_base * (1 - 0.3 * Is/self.i_max)
+            self.Ld = self.Ld_base * (1 - 0.4 * Is/self.i_max)
         else:
             self.Lq = self.Lq_base * 0.6
-            self.Ld = self.Ld_base * 0.7
+            self.Ld = self.Ld_base * 0.6
     
     def inductance_abc(self, theta):
         """
@@ -352,6 +354,7 @@ class Application:
         self.torque_ramp = config.torque_ramp
         self.v_batt_init = config.v_batt_init
         self.v_bus = self.v_batt_init
+        self.max_power = config.max_power
         self.init_speed = config.init_speed
         self.short_circuit = config.short_circuit
         self.battery_capacity = config.battery_capacity * 3600                          # Converting to coulomb
@@ -516,7 +519,7 @@ class LUT:
         self.mtpa_lut = []
 
 
-    def mtpa_cost_func(self, x, curr, we, vmax, motor):
+    def mtpa_cost_func(self, x, curr, we, vmax, pmax, motor):
         '''
         Finds max torque within current and voltage constraints \n
         Args:
@@ -538,6 +541,15 @@ class LUT:
             cost = 1/torque
         else:
             cost = 1
+
+        # Mechanical speed (rad/s)
+        omega_mech = we / motor.pole_pairs
+        # Mechanical power (W)
+        p_mech = torque * omega_mech
+        
+        # Power constraint
+        if p_mech > pmax:
+            cost *= 2 ** (1 + 10 * (p_mech / pmax))        
         
         # Constraints:
         # Iq > 0
@@ -575,15 +587,16 @@ class LUT:
 
         current_list = np.linspace(0,motor.i_max, int(len(torque_list) * motor.i_max / self.torque_max))
         vmax = app.v_batt_init / np.sqrt(3)    # Max phase voltage w/o overmodulation assuming third harmonic injection
+        pmax = app.max_power
         
         current_lut = [[[0, 0, 0] for _ in speed_list] for _ in current_list]
         self.mtpa_lut = [[[0, 0] for _ in speed_list] for _ in torque_list]
 
-        # Finding accurate flux linkage according to motor datasheet.
+        # Finding more accurate flux linkage according to motor datasheet.
         # If max torque is unknown, don't update the flux linkage.    
         motor.inductance_dq(motor.i_max, 0)
         for iter in range(10):
-            res = minimize(self.mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, motor))
+            res = minimize(self.mtpa_cost_func, np.pi/2 * 0.8, method='Nelder-Mead', tol=0.001, options={'maxiter': 200, 'disp': False}, args= (motor.i_max, 0, vmax, pmax, motor))
             res_torque_max = 1/res.fun
             motor.flux_linkage = motor.flux_linkage * (self.torque_max / res_torque_max)
         
@@ -603,7 +616,7 @@ class LUT:
                     res = []
                     cost = []
                     for iter in range(5):                    
-                        res.append(minimize(self.mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], elec_speed, vmax, motor)))
+                        res.append(minimize(self.mtpa_cost_func, x0[iter], method='Nelder-Mead', tol=0.001, options={'maxiter': 100, 'disp': False}, args= (current_list[curr_index], elec_speed, vmax, pmax, motor)))
                         cost.append(res[iter].fun)
                     
                     abs_cost = [abs(ele) for ele in cost]
@@ -668,7 +681,10 @@ class LUT:
         # Add legend and grid
         plt.legend()
         plt.grid(True)
-        plt.show()       
+        plt.show()    
+
+        # Add the table output
+        self.display_mtpa_table(torque_list, speed_list)   
 
 
     def bilinear_interpolation(self, torque, speed):
@@ -719,6 +735,49 @@ class LUT:
         )
 
         return iq_interp, id_interp        
+
+
+    def display_mtpa_table(self, torque_list, speed_list):
+        """
+        Displays MTPA LUT as a table in a matplotlib figure
+        
+        Args:
+            torque_list: Array of torque values
+            speed_list: Array of speed values
+        """
+        # Convert speeds to RPM
+        speed_rpm = [int(speed * 60 / (2*np.pi)) for speed in speed_list]
+        
+        # Prepare table data
+        table_data = []
+        for torque_idx, torque in enumerate(torque_list):
+            row = [f"{torque:.2f}"]
+            for speed_idx in range(len(speed_list)):
+                iq = self.mtpa_lut[torque_idx][speed_idx][0]
+                id = self.mtpa_lut[torque_idx][speed_idx][1]
+                row.append(f"{iq:.2f}\n{id:.2f}")
+            table_data.append(row)
+        
+        # Create figure and axis
+        fig, ax = plt.subplots(figsize=(12, max(6, len(torque_list) * 0.5)))
+        ax.axis('off')
+        
+        # Create table
+        col_labels = ["Torque (Nm)"] + [f"{rpm} RPM\n(Iq,Id)" for rpm in speed_rpm]
+        table = ax.table(cellText=table_data,
+                        colLabels=col_labels,
+                        cellLoc='center',
+                        loc='center')
+        
+        # Adjust table properties
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 1.5)  # Scale height for better readability
+        
+        # Adjust layout and display
+        plt.title("MTPA Lookup Table")
+        plt.tight_layout()
+        plt.show()
 
 
 class LowPassFilter:
