@@ -660,9 +660,9 @@ class LUT:
 
         # Iterate through speeds and plot each speed's points
         for speed_index, speed in enumerate(speed_list):
-            # Extract Id and Iq values for the current speed (column)
-            iq_values = [row[speed_index][0] for row in self.mtpa_lut]
-            id_values = [row[speed_index][1] for row in self.mtpa_lut]
+            # Extract Id and Iq values for the current speed (column) and keep only the first occurrence to prevent plotting duplicates.
+            iq_values = [key for key, _ in groupby(row[speed_index][0] for row in self.mtpa_lut)]
+            id_values = [key for key, _ in groupby(row[speed_index][1] for row in self.mtpa_lut)]
 
             # Plot with a unique color for each speed
             plt.scatter(id_values, iq_values, label=f"Speed: {int(speed * 60 / (2*np.pi))} RPM")        
