@@ -95,6 +95,9 @@ This project requires the following Python modules:
 - tkinter
 - math
 
+### Note:
+in the root folder, run `pip install -r requirements.txt` to easily install third-party python modules
+
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
