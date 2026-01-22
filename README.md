@@ -2,6 +2,11 @@
 
 This repository contains a Python-based motor simulator designed to aid in control algorithm development. The simulation allows fine-grained control over motor and application settings and supports real-time switching behavior and dead-time effects.
 
+Here's a video I made about this script:  
+
+**Motor Control Simulation: Theory & Implementation**  
+[![Video Title](https://img.youtube.com/vi/CC1rBmhWIqo/0.jpg)](https://www.youtube.com/watch?v=CC1rBmhWIqo)
+
 ## Features
 
 - Simulates motor electrical and mechanical dynamics for Synchronous motors (Asynchronous TBD)
