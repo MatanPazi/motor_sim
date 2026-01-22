@@ -101,7 +101,7 @@ This project requires the following Python modules:
 - math
 
 ### Note:
-in the root folder, run `pip install -r requirements.txt` to easily install third-party python modules
+In the root folder, run `pip install -r requirements.txt` to easily install third-party python modules
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
