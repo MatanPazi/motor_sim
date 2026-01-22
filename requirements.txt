@@ -2,3 +2,4 @@ control
 scipy
 matplotlib
 numpy
+tqdm
